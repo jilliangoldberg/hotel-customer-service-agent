@@ -1,0 +1,24 @@
+[
+  {
+    "RoomName": "Garden King Room",
+    "RoomTypeID": "HTRM001",
+    "AvailableRooms": 120,
+    "Description": "One king bed, a garden view, a work desk, and complimentary Wi-Fi.",
+    "Tags": [
+      "King bed",
+      "Garden view",
+      "Wi-Fi"
+    ]
+  },
+  {
+    "RoomName": "Courtyard Twin Room",
+    "RoomTypeID": "HTRM002",
+    "AvailableRooms": 75,
+    "Description": "Two twin beds, a courtyard view, and complimentary Wi-Fi.",
+    "Tags": [
+      "Twin beds",
+      "Courtyard view",
+      "Wi-Fi"
+    ]
+  }
+]

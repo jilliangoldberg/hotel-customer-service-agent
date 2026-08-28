@@ -1,0 +1,24 @@
+[
+  {
+    "GuestName": "John Doe",
+    "Email": "john.doe@example.com",
+    "ReservationNumber": "#H001",
+    "RoomsReserved": [
+      "HTRM001",
+      "HTRM004"
+    ],
+    "Status": "checked-out",
+    "CheckInDate": "2026-11-10"
+  },
+  {
+    "GuestName": "Jane Smith",
+    "Email": "jane.smith@example.com",
+    "ReservationNumber": "#H002",
+    "RoomsReserved": [
+      "HTRM005",
+      "HTRM006"
+    ],
+    "Status": "confirmed",
+    "CheckInDate": "2026-11-11"
+  }
+]

@@ -1,0 +1,259 @@
+"""Deterministic tools available to the language model."""
+
+from collections.abc import Callable
+from datetime import datetime, time
+import hashlib
+import hmac
+import json
+from pathlib import Path
+import re
+from typing import Any
+from zoneinfo import ZoneInfo
+
+
+PACIFIC_TIME = ZoneInfo("America/Los_Angeles")
+EARLY_RISERS_START = time(8, 0)
+EARLY_RISERS_END = time(10, 0)
+EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+TOOL_DEFINITIONS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "name": "lookup_reservation",
+        "description": (
+            "Look up one reservation after the customer has supplied both their email "
+            "address and reservation number."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "description": "The customer's complete email address.",
+                },
+                "reservation_number": {
+                    "type": "string",
+                    "description": "The complete reservation number, such as #H001.",
+                },
+            },
+            "required": ["email", "reservation_number"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "get_available_rooms",
+        "description": (
+            "Return the complete available Trailhead Hotel room catalog for "
+            "grounded room recommendations."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+    {
+        "type": "function",
+        "name": "create_early_risers_code",
+        "description": (
+            "Check the current Pacific time and, when eligible, create today's "
+            "Early Risers Promotion code for the supplied email."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "email": {
+                    "type": "string",
+                    "description": "The customer's complete email address.",
+                }
+            },
+            "required": ["email"],
+            "additionalProperties": False,
+        },
+        "strict": True,
+    },
+]
+
+
+class DataError(ValueError):
+    """Raised when a static dataset is missing or malformed."""
+
+
+class HotelTools:
+    """Load hotel data and execute the agent's approved tools."""
+
+    def __init__(
+        self,
+        data_dir: Path,
+        promotion_secret: str,
+        now: Callable[[], datetime] | None = None,
+    ) -> None:
+        self._reservations = self._load_records(
+            data_dir / "guest_reservations.json",
+            {
+                "Email",
+                "ReservationNumber",
+                "Status",
+                "CheckInDate",
+            },
+        )
+        self._rooms = self._load_records(
+            data_dir / "room_catalog.json",
+            {
+                "RoomName",
+                "RoomTypeID",
+                "AvailableRooms",
+                "Description",
+                "Tags",
+            },
+        )
+        self._promotion_secret = promotion_secret.encode("utf-8")
+        self._now = now or (lambda: datetime.now(PACIFIC_TIME))
+
+    @staticmethod
+    def _load_records(path: Path, required_fields: set[str]) -> list[dict[str, Any]]:
+        """Load a JSON array and fail early when required fields are absent."""
+
+        try:
+            records = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError as error:
+            raise DataError(f"Missing dataset: {path.name}") from error
+        except json.JSONDecodeError as error:
+            raise DataError(f"Invalid JSON in {path.name}: {error.msg}") from error
+
+        if not isinstance(records, list):
+            raise DataError(f"{path.name} must contain a JSON array.")
+
+        for index, record in enumerate(records):
+            if not isinstance(record, dict):
+                raise DataError(f"{path.name} record {index} must be an object.")
+            missing = required_fields - record.keys()
+            if missing:
+                names = ", ".join(sorted(missing))
+                raise DataError(f"{path.name} record {index} is missing: {names}.")
+
+        return records
+
+    @staticmethod
+    def _normalize_email(email: Any) -> str | None:
+        if not isinstance(email, str):
+            return None
+        normalized = email.strip().casefold()
+        return normalized if EMAIL_PATTERN.fullmatch(normalized) else None
+
+    @staticmethod
+    def _normalize_reservation_number(reservation_number: Any) -> str | None:
+        if not isinstance(reservation_number, str):
+            return None
+        normalized = reservation_number.strip().upper()
+        if not normalized:
+            return None
+        return normalized if normalized.startswith("#") else f"#{normalized}"
+
+    def lookup_reservation(self, email: str, reservation_number: str) -> dict[str, Any]:
+        """Find a reservation only when both customer identifiers match."""
+
+        normalized_email = self._normalize_email(email)
+        normalized_reservation = self._normalize_reservation_number(reservation_number)
+        if normalized_email is None or normalized_reservation is None:
+            return {"ok": False, "error": "invalid_reservation_details"}
+
+        for reservation in self._reservations:
+            saved_email = str(reservation["Email"]).strip().casefold()
+            saved_reservation = self._normalize_reservation_number(str(reservation["ReservationNumber"]))
+            if saved_email == normalized_email and saved_reservation == normalized_reservation:
+                check_in_date = reservation.get("CheckInDate")
+                return {
+                    "ok": True,
+                    "found": True,
+                    "status": str(reservation["Status"]),
+                    "check_in_date": check_in_date,
+                }
+
+        # A generic result avoids revealing which identifier exists.
+        return {"ok": True, "found": False}
+
+    def get_available_rooms(self) -> dict[str, Any]:
+        """Return rooms with positive availability."""
+
+        rooms: list[dict[str, Any]] = []
+        for room in self._rooms:
+            availability = room["AvailableRooms"]
+            if not isinstance(availability, int):
+                raise DataError("Room availability values must be integers.")
+            if availability <= 0:
+                continue
+            rooms.append(
+                {
+                    "name": room["RoomName"],
+                    "room_type_id": room["RoomTypeID"],
+                    "availability": availability,
+                    "description": room["Description"],
+                    "tags": room["Tags"],
+                }
+            )
+
+        return {"ok": True, "rooms": rooms}
+
+    def create_early_risers_code(self, email: str) -> dict[str, Any]:
+        """Return a stable daily code when the current Pacific time is eligible."""
+
+        normalized_email = self._normalize_email(email)
+        if normalized_email is None:
+            return {"ok": False, "error": "invalid_email"}
+
+        current = self._now()
+        if current.tzinfo is None:
+            raise ValueError("The clock must return a timezone-aware datetime.")
+        pacific_now = current.astimezone(PACIFIC_TIME)
+        local_time = pacific_now.time().replace(tzinfo=None)
+
+        if not EARLY_RISERS_START <= local_time < EARLY_RISERS_END:
+            return {
+                "ok": True,
+                "eligible": False,
+                "reason": (
+                    "The Early Risers Promotion is available from 8:00 AM until "
+                    "10:00 AM Pacific Time."
+                ),
+            }
+
+        message = f"{pacific_now.date().isoformat()}:{normalized_email}".encode()
+        digest = hmac.new(
+            self._promotion_secret,
+            message,
+            hashlib.sha256,
+        ).hexdigest()
+        return {
+            "ok": True,
+            "eligible": True,
+            "code": f"EARLY-{digest[:12].upper()}",
+        }
+
+    def execute(self, name: str, arguments_json: str) -> dict[str, Any]:
+        """Validate and dispatch one model-requested tool call."""
+
+        try:
+            arguments = json.loads(arguments_json)
+        except json.JSONDecodeError:
+            return {"ok": False, "error": "invalid_tool_arguments"}
+        if not isinstance(arguments, dict):
+            return {"ok": False, "error": "invalid_tool_arguments"}
+
+        handlers: dict[str, Callable[..., dict[str, Any]]] = {
+            "lookup_reservation": self.lookup_reservation,
+            "get_available_rooms": self.get_available_rooms,
+            "create_early_risers_code": self.create_early_risers_code,
+        }
+        handler = handlers.get(name)
+        if handler is None:
+            return {"ok": False, "error": "unknown_tool"}
+
+        try:
+            return handler(**arguments)
+        except TypeError:
+            return {"ok": False, "error": "invalid_tool_arguments"}

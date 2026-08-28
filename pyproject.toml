@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hotel-customer-service-agent"
+version = "0.1.0"
+description = "A minimal tool-calling support agent for Trailhead Hotel."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "openai",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+sierra-agent = "sierra_agent.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+pythonpath = ["src"]
