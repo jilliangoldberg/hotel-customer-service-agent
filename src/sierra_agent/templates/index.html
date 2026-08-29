@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Trailhead Hotel</title>
+    <style>
+      :root {
+        --pine: #234636;
+        --moss: #3f6b52;
+        --canvas: #f4e6c8;
+        --paper: #fffaf0;
+        --trail: #c45c26;
+        --ink: #243126;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+        background: linear-gradient(#87b5c9 0 28%, #cfe3c4 28% 42%, var(--canvas) 42%);
+        color: var(--ink);
+      }
+      main {
+        max-width: 640px;
+        margin: 0 auto;
+        padding: 24px 16px 32px;
+      }
+      header {
+        text-align: center;
+        color: var(--pine);
+        margin-bottom: 16px;
+      }
+      header h1 {
+        margin: 0;
+        font-size: 2rem;
+      }
+      header p {
+        margin: 6px 0 0;
+        font-style: italic;
+      }
+      #log {
+        background: var(--paper);
+        border: 3px solid var(--pine);
+        border-radius: 18px;
+        min-height: 360px;
+        max-height: 60vh;
+        overflow-y: auto;
+        padding: 16px;
+        box-shadow: 6px 6px 0 var(--moss);
+      }
+      .msg {
+        max-width: 85%;
+        margin: 10px 0;
+        padding: 10px 12px;
+        border-radius: 16px;
+        line-height: 1.4;
+        white-space: pre-wrap;
+      }
+      .you {
+        margin-left: auto;
+        background: #f3d7b3;
+      }
+      .agent {
+        background: #d7eadb;
+      }
+      form {
+        display: flex;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      input, button {
+        font: inherit;
+        border-radius: 999px;
+        border: 2px solid var(--pine);
+        padding: 10px 14px;
+      }
+      input { flex: 1; background: var(--paper); }
+      button {
+        background: var(--trail);
+        color: white;
+        cursor: pointer;
+      }
+      button:disabled { opacity: 0.6; cursor: wait; }
+      #new-trail {
+        display: block;
+        margin: 10px auto 0;
+        background: var(--pine);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>🏨 Trailhead Hotel</h1>
+        <p>A welcoming stay starts here.</p>
+      </header>
+      <div id="log">
+        <div class="msg agent">Welcome to Trailhead Hotel! Ask me about a reservation, rooms, or the Early Risers promo. 🛎️</div>
+      </div>
+      <form id="chat-form">
+        <input id="message" type="text" autocomplete="off" placeholder="How can we help with your stay?" />
+        <button type="submit">Send 🛏️</button>
+      </form>
+      <button id="new-trail" type="button">Start a new chat</button>
+    </main>
+    <script>
+      const log = document.getElementById("log");
+      const form = document.getElementById("chat-form");
+      const input = document.getElementById("message");
+      const sendBtn = form.querySelector("button");
+
+      function addMsg(role, text) {
+        const div = document.createElement("div");
+        div.className = "msg " + role;
+        div.textContent = text;
+        log.appendChild(div);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const text = input.value.trim();
+        if (!text) return;
+        addMsg("you", text);
+        input.value = "";
+        sendBtn.disabled = true;
+        try {
+          const res = await fetch("/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: text }),
+          });
+          const data = await res.json();
+          addMsg("agent", data.reply || "Hmm, that path went quiet. Try again?");
+        } catch {
+          addMsg("agent", "The guest desk connection failed. Please try again in a moment.");
+        }
+        sendBtn.disabled = false;
+        input.focus();
+      });
+
+      document.getElementById("new-trail").addEventListener("click", async () => {
+        await fetch("/reset", { method: "POST" });
+        log.innerHTML = "";
+        addMsg("agent", "Fresh trail! What can I help with?");
+        input.focus();
+      });
+    </script>
+  </body>
+</html>

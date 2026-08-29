@@ -9,6 +9,7 @@ description = "A minimal tool-calling support agent for Trailhead Hotel."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "flask",
     "openai",
     "python-dotenv",
 ]
@@ -18,6 +19,10 @@ dev = ["pytest"]
 
 [project.scripts]
 sierra-agent = "sierra_agent.__main__:main"
+sierra-agent-web = "sierra_agent.web:main"
+
+[tool.setuptools.package-data]
+sierra_agent = ["templates/*"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

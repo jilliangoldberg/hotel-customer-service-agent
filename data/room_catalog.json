@@ -20,5 +20,89 @@
       "Courtyard view",
       "Wi-Fi"
     ]
+  },
+  {
+    "RoomName": "Alpenglow Junior Suite",
+    "RoomTypeID": "HTRM003",
+    "AvailableRooms": 200,
+    "Description": "One king bed, a separate sitting area, and a coffee maker.",
+    "Tags": [
+      "Suite",
+      "King bed",
+      "Sitting area"
+    ]
+  },
+  {
+    "RoomName": "Family Connecting Rooms",
+    "RoomTypeID": "HTRM004",
+    "AvailableRooms": 300,
+    "Description": "Two connecting rooms with one king bed and two twin beds.",
+    "Tags": [
+      "Family",
+      "Connecting rooms"
+    ]
+  },
+  {
+    "RoomName": "City View Queen Room",
+    "RoomTypeID": "HTRM005",
+    "AvailableRooms": 150,
+    "Description": "One queen bed, a city view, and a work desk.",
+    "Tags": [
+      "Queen bed",
+      "City view"
+    ]
+  },
+  {
+    "RoomName": "Accessible King Room",
+    "RoomTypeID": "HTRM006",
+    "AvailableRooms": 180,
+    "Description": "One king bed, a roll-in shower, and step-free access.",
+    "Tags": [
+      "Accessible",
+      "King bed",
+      "Roll-in shower"
+    ]
+  },
+  {
+    "RoomName": "Terrace King Room",
+    "RoomTypeID": "HTRM007",
+    "AvailableRooms": 90,
+    "Description": "One king bed and a private terrace with outdoor seating.",
+    "Tags": [
+      "King bed",
+      "Terrace"
+    ]
+  },
+  {
+    "RoomName": "Courtyard Queen Room",
+    "RoomTypeID": "HTRM008",
+    "AvailableRooms": 14,
+    "Description": "One queen bed, a courtyard view, and complimentary Wi-Fi.",
+    "Tags": [
+      "Queen bed",
+      "Courtyard view"
+    ]
+  },
+  {
+    "RoomName": "Panorama Suite",
+    "RoomTypeID": "HTRM009",
+    "AvailableRooms": 50,
+    "Description": "One king bed, a separate living room, and panoramic windows.",
+    "Tags": [
+      "Suite",
+      "King bed",
+      "Living room"
+    ]
+  },
+  {
+    "RoomName": "Penthouse Suite",
+    "RoomTypeID": "HTRM010",
+    "AvailableRooms": 14,
+    "Description": "One king bed, a separate living room, and a private balcony.",
+    "Tags": [
+      "Suite",
+      "Balcony",
+      "Living room"
+    ]
   }
 ]

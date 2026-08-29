@@ -22,7 +22,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "name": "lookup_reservation",
         "description": (
             "Look up one reservation after the customer has supplied both their email "
-            "address and reservation number."
+            "address and reservation number. Spacing, capitalization, a missing #, and "
+            "extra symbols are normalized automatically."
         ),
         "parameters": {
             "type": "object",
@@ -149,10 +150,24 @@ class HotelTools:
     def _normalize_reservation_number(reservation_number: Any) -> str | None:
         if not isinstance(reservation_number, str):
             return None
-        normalized = reservation_number.strip().upper()
-        if not normalized:
-            return None
-        return normalized if normalized.startswith("#") else f"#{normalized}"
+        compact = re.sub(r"\s+", "", reservation_number).upper()
+        compact = re.sub(r"[^#A-Z0-9]", "", compact).lstrip("#")
+        return f"#{compact}" if compact else None
+
+    def _room_names_for_room_type_ids(self, room_type_ids: Any) -> list[str]:
+        """Map ordered RoomTypeIDs to catalog names, keeping unknown RoomTypeIDs as-is."""
+
+        if not isinstance(room_type_ids, list):
+            return []
+        names_by_room_type_id = {
+            str(room["RoomTypeID"]): str(room["RoomName"])
+            for room in self._rooms
+        }
+        names: list[str] = []
+        for room_type_id in room_type_ids:
+            key = str(room_type_id)
+            names.append(names_by_room_type_id.get(key, key))
+        return names
 
     def lookup_reservation(self, email: str, reservation_number: str) -> dict[str, Any]:
         """Find a reservation only when both customer identifiers match."""
@@ -167,10 +182,20 @@ class HotelTools:
             saved_reservation = self._normalize_reservation_number(str(reservation["ReservationNumber"]))
             if saved_email == normalized_email and saved_reservation == normalized_reservation:
                 check_in_date = reservation.get("CheckInDate")
+                guest_name = reservation.get("GuestName")
                 return {
                     "ok": True,
                     "found": True,
+                    "reservation_number": saved_reservation,
+                    "guest_name": (
+                        guest_name.strip()
+                        if isinstance(guest_name, str) and guest_name.strip()
+                        else None
+                    ),
                     "status": str(reservation["Status"]),
+                    "rooms": self._room_names_for_room_type_ids(
+                        reservation.get("RoomsReserved")
+                    ),
                     "check_in_date": check_in_date,
                 }
 

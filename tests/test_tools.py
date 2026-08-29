@@ -11,11 +11,21 @@ from sierra_agent.tools import PACIFIC_TIME, HotelTools
 
 ORDERS = [
     {
+        "GuestName": "Hotel Guest",
         "Email": "hiker@example.com",
         "ReservationNumber": "#H001",
+        "RoomsReserved": ["ROOM1"],
         "Status": "confirmed",
         "CheckInDate": "2026-11-10",
-    }
+    },
+    {
+        "GuestName": "Returning Guest",
+        "Email": "camp@example.com",
+        "ReservationNumber": "#H002",
+        "RoomsReserved": ["ROOM1"],
+        "Status": "checked-in",
+        "CheckInDate": None,
+    },
 ]
 
 PRODUCTS = [
@@ -55,15 +65,34 @@ def make_tools(
 def test_reservation_lookup_normalizes_both_identifiers(tmp_path: Path) -> None:
     tools = make_tools(tmp_path)
 
-    result = tools.lookup_reservation(" HIKER@example.com ", "h001")
+    result = tools.lookup_reservation(" HIKER@example.com ", " h-001. ")
 
     assert result == {
         "ok": True,
         "found": True,
+        "reservation_number": "#H001",
+        "guest_name": "Hotel Guest",
         "status": "confirmed",
+        "rooms": ["Garden King Room"],
         "check_in_date": (
             "2026-11-10"
         ),
+    }
+
+
+def test_reservation_lookup_confirms_details_without_tracking(tmp_path: Path) -> None:
+    tools = make_tools(tmp_path)
+
+    result = tools.lookup_reservation("camp@example.com", "#H002")
+
+    assert result == {
+        "ok": True,
+        "found": True,
+        "reservation_number": "#H002",
+        "guest_name": "Returning Guest",
+        "status": "checked-in",
+        "rooms": ["Garden King Room"],
+        "check_in_date": None,
     }
 
 

@@ -20,5 +20,89 @@
     ],
     "Status": "confirmed",
     "CheckInDate": "2026-11-11"
+  },
+  {
+    "GuestName": "Alice Johnson",
+    "Email": "alice.johnson@example.com",
+    "ReservationNumber": "#H003",
+    "RoomsReserved": [
+      "HTRM003"
+    ],
+    "Status": "checked-in",
+    "CheckInDate": null
+  },
+  {
+    "GuestName": "Bob Brown",
+    "Email": "bob.brown@example.com",
+    "ReservationNumber": "#H004",
+    "RoomsReserved": [
+      "HTRM007",
+      "HTRM010"
+    ],
+    "Status": "error",
+    "CheckInDate": null
+  },
+  {
+    "GuestName": "Charlie Davis",
+    "Email": "charlie.davis@example.com",
+    "ReservationNumber": "#H005",
+    "RoomsReserved": [
+      "HTRM008"
+    ],
+    "Status": "checked-out",
+    "CheckInDate": "2026-11-14"
+  },
+  {
+    "GuestName": "Diana Evans",
+    "Email": "diana.evans@example.com",
+    "ReservationNumber": "#H006",
+    "RoomsReserved": [
+      "HTRM009",
+      "HTRM005"
+    ],
+    "Status": "confirmed",
+    "CheckInDate": "2026-11-15"
+  },
+  {
+    "GuestName": "Ethan Harris",
+    "Email": "ethan.harris@example.com",
+    "ReservationNumber": "#H007",
+    "RoomsReserved": [
+      "HTRM001",
+      "HTRM006"
+    ],
+    "Status": "checked-in",
+    "CheckInDate": null
+  },
+  {
+    "GuestName": "Fiona Clark",
+    "Email": "fiona.clark@example.com",
+    "ReservationNumber": "#H008",
+    "RoomsReserved": [
+      "HTRM004"
+    ],
+    "Status": "error",
+    "CheckInDate": null
+  },
+  {
+    "GuestName": "George Hill",
+    "Email": "george.hill@example.com",
+    "ReservationNumber": "#H009",
+    "RoomsReserved": [
+      "HTRM003",
+      "HTRM009"
+    ],
+    "Status": "checked-out",
+    "CheckInDate": "2026-11-18"
+  },
+  {
+    "GuestName": "Hannah Lewis",
+    "Email": "hannah.lewis@example.com",
+    "ReservationNumber": "#H010",
+    "RoomsReserved": [
+      "HTRM007"
+    ],
+    "Status": "confirmed",
+    "CheckInDate": "2026-11-19"
   }
 ]
