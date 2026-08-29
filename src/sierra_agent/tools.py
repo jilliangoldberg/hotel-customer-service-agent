@@ -100,6 +100,7 @@ class HotelTools:
                 "ReservationNumber",
                 "Status",
                 "CheckInDate",
+                "RoomsReserved",
             },
         )
         self._rooms = self._load_records(
@@ -112,6 +113,8 @@ class HotelTools:
                 "Tags",
             },
         )
+        self._validate_reservations()
+        self._validate_rooms()
         self._promotion_secret = promotion_secret.encode("utf-8")
         self._now = now or (lambda: datetime.now(PACIFIC_TIME))
 
@@ -138,6 +141,63 @@ class HotelTools:
                 raise DataError(f"{path.name} record {index} is missing: {names}.")
 
         return records
+
+    @staticmethod
+    def _has_text(value: Any) -> bool:
+        return isinstance(value, str) and bool(value.strip())
+
+    def _validate_reservations(self) -> None:
+        """Validate reservation fields once, before customer requests arrive."""
+
+        for index, reservation in enumerate(self._reservations):
+            if self._normalize_email(reservation["Email"]) is None:
+                raise DataError(
+                    f"guest_reservations.json record {index} has an invalid Email."
+                )
+            if self._normalize_reservation_number(reservation["ReservationNumber"]) is None:
+                raise DataError(
+                    f"guest_reservations.json record {index} has an invalid ReservationNumber."
+                )
+            if not self._has_text(reservation["Status"]):
+                raise DataError(
+                    f"guest_reservations.json record {index} has an invalid Status."
+                )
+            check_in_date = reservation["CheckInDate"]
+            if check_in_date is not None and not self._has_text(check_in_date):
+                raise DataError(
+                    f"guest_reservations.json record {index} has an invalid CheckInDate."
+                )
+            rooms = reservation["RoomsReserved"]
+            if not isinstance(rooms, list) or not rooms or not all(
+                self._has_text(room) for room in rooms
+            ):
+                raise DataError(
+                    f"guest_reservations.json record {index} has invalid RoomsReserved."
+                )
+
+    def _validate_rooms(self) -> None:
+        """Validate catalog fields once, before recommendations are requested."""
+
+        for index, room in enumerate(self._rooms):
+            text_fields = ("RoomName", "RoomTypeID", "Description")
+            if not all(self._has_text(room[field]) for field in text_fields):
+                raise DataError(
+                    f"room_catalog.json record {index} has an invalid text field."
+                )
+            availability = room["AvailableRooms"]
+            if (
+                not isinstance(availability, int)
+                or isinstance(availability, bool)
+                or availability < 0
+            ):
+                raise DataError(
+                    f"room_catalog.json record {index} has an invalid AvailableRooms."
+                )
+            tags = room["Tags"]
+            if not isinstance(tags, list) or not all(self._has_text(tag) for tag in tags):
+                raise DataError(
+                    f"room_catalog.json record {index} has invalid Tags."
+                )
 
     @staticmethod
     def _normalize_email(email: Any) -> str | None:

@@ -32,44 +32,49 @@ class SierraAgent:
     def reply(self, user_message: str) -> str:
         """Send one customer message and resolve any requested tool calls."""
 
-        response = self._create_response(
-            input_items=user_message,
-            previous_response_id=self._previous_response_id,
-        )
-        tool_rounds = 0
-
-        while True:
-            tool_calls = [
-                item
-                for item in response.output
-                if item.type == "function_call"
-            ]
-            if not tool_calls:
-                text = response.output_text.strip()
-                if not text:
-                    raise AgentLoopError("The model returned no text response.")
-                self._previous_response_id = response.id
-                return text
-
-            if tool_rounds >= self._max_tool_rounds:
-                raise AgentLoopError("The model exceeded the tool-call limit.")
-            tool_rounds += 1
-
-            tool_outputs = []
-            for call in tool_calls:
-                result = self._tools.execute(call.name, call.arguments)
-                tool_outputs.append(
-                    {
-                        "type": "function_call_output",
-                        "call_id": call.call_id,
-                        "output": json.dumps(result, separators=(",", ":")),
-                    }
-                )
-
+        previous_response_id = self._previous_response_id
+        try:
             response = self._create_response(
-                input_items=tool_outputs,
-                previous_response_id=response.id,
+                input_items=user_message,
+                previous_response_id=previous_response_id,
             )
+            tool_rounds = 0
+
+            while True:
+                tool_calls = [
+                    item
+                    for item in response.output
+                    if item.type == "function_call"
+                ]
+                if not tool_calls:
+                    text = response.output_text.strip()
+                    if not text:
+                        raise AgentLoopError("The model returned no text response.")
+                    self._previous_response_id = response.id
+                    return text
+
+                if tool_rounds >= self._max_tool_rounds:
+                    raise AgentLoopError("The model exceeded the tool-call limit.")
+                tool_rounds += 1
+
+                tool_outputs = []
+                for call in tool_calls:
+                    result = self._tools.execute(call.name, call.arguments)
+                    tool_outputs.append(
+                        {
+                            "type": "function_call_output",
+                            "call_id": call.call_id,
+                            "output": json.dumps(result, separators=(",", ":")),
+                        }
+                    )
+
+                response = self._create_response(
+                    input_items=tool_outputs,
+                    previous_response_id=response.id,
+                )
+        except Exception:
+            self._previous_response_id = previous_response_id
+            raise
 
     def _create_response(
         self,

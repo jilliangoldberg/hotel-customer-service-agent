@@ -121,16 +121,21 @@ def test_handles_multiple_tool_calls_from_one_response() -> None:
     assert len(client.responses.requests[1]["input"]) == 2
 
 
-def test_stops_runaway_tool_loop() -> None:
+def test_failed_tool_loop_keeps_last_successful_session_checkpoint() -> None:
     agent, client, _ = make_agent(
         [
-            tool_response("response-1", tool_call("lookup_reservation", "call-1")),
-            tool_response("response-2", tool_call("lookup_reservation", "call-2")),
+            text_response("response-1", "Welcome to the trail!"),
+            tool_response("response-2", tool_call("lookup_reservation", "call-1")),
+            tool_response("response-3", tool_call("lookup_reservation", "call-2")),
+            text_response("response-4", "Let's try that again."),
         ],
         max_tool_rounds=1,
     )
 
+    agent.reply("Hello")
+
     with pytest.raises(AgentLoopError, match="tool-call limit"):
         agent.reply("Keep calling tools.")
 
-    assert len(client.responses.requests) == 2
+    assert agent.reply("Retry my request") == "Let's try that again."
+    assert client.responses.requests[-1]["previous_response_id"] == "response-1"

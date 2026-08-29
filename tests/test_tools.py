@@ -117,6 +117,21 @@ def test_available_rooms_exclude_zero_availability(tmp_path: Path) -> None:
     assert [room["room_type_id"] for room in result["rooms"]] == ["ROOM1"]
 
 
+def test_rejects_malformed_catalog_at_startup(tmp_path: Path) -> None:
+    malformed_rooms = [{**PRODUCTS[0], "AvailableRooms": "2"}]
+    (tmp_path / "guest_reservations.json").write_text(
+        json.dumps(ORDERS),
+        encoding="utf-8",
+    )
+    (tmp_path / "room_catalog.json").write_text(
+        json.dumps(malformed_rooms),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="invalid AvailableRooms"):
+        HotelTools(tmp_path, "a-test-secret-value")
+
+
 @pytest.mark.parametrize(
     ("hour", "minute", "eligible"),
     [
