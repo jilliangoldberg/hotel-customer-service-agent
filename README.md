@@ -1,7 +1,8 @@
 # Trailhead Hotel Agent
 
-A small Python chat agent for reservation check_in_date, room recommendations, and the
-Early Risers Promotion. It uses OpenAI tool calling without an agent framework.
+A small Python support agent for reservation check_in_date, room recommendations, and
+the Early Risers Promotion. It uses OpenAI tool calling without an agent
+framework and supports both terminal and local web chat.
 
 ## Setup
 
@@ -17,7 +18,8 @@ cp .env.example .env
 Set three values in `.env`:
 
 - `OPENAI_API_KEY`: the provided API key. Never commit it.
-- `OPENAI_MODEL`: defaults to `gpt-4o-mini`; `gpt-4o` is also supported.
+- `OPENAI_MODEL`: a model your OpenAI project can access. `gpt-4.1-mini` is a
+  good low-cost development choice.
 - `PROMOTION_SECRET`: a private random value with at least 16 characters.
 
 Generate a promotion secret with:
@@ -26,13 +28,22 @@ Generate a promotion secret with:
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Start the chat:
+Start the terminal chat:
 
 ```bash
 python -m sierra_agent
 ```
 
 Type `exit`, `quit`, or `Ctrl-C` to end the session.
+
+Start the local web chat:
+
+```bash
+python -m sierra_agent.web
+```
+
+Then open http://127.0.0.1:5050. “Start a new chat” resets only that browser's
+conversation.
 
 ## Behavior
 
@@ -61,7 +72,7 @@ one user on one date without storing the email or issued code.
 
 ```text
 Customer
-  -> terminal loop
+  -> terminal loop or local web chat
   -> OpenAI Responses API
   -> optional function call
   -> deterministic Python tool
@@ -77,9 +88,16 @@ Tool definitions use strict JSON schemas. Python validates again because model
 output must still be treated as external input. The loop supports multiple tool
 calls in one response and stops after five tool rounds.
 
-The app keeps only the last OpenAI response ID during the process lifetime.
-Exiting clears local session state. OpenAI handles API data according to the
-account's configured data controls.
+The terminal has one in-memory conversation per process. The web app assigns
+each browser an isolated in-memory conversation using a signed session cookie;
+restarting the app clears those sessions. OpenAI handles API data according to
+the account's configured data controls.
+
+Each turn also produces a redacted developer trace: tool names and outcomes,
+tool rounds, duration, and an error class when relevant. It never includes
+customer messages, emails, reservation numbers, tool arguments/results, or model
+reasoning. The local web UI shows the latest trace in a collapsed “Developer
+trace” panel.
 
 ## File map
 
@@ -94,8 +112,12 @@ account's configured data controls.
 - `src/sierra_agent/prompt.py` — brand voice and conversation rules.
 - `src/sierra_agent/tools.py` — schemas, data loading, tool logic, and dispatch.
 - `src/sierra_agent/agent.py` — Responses API and tool-calling loop.
+- `src/sierra_agent/web.py` — local Flask chat and per-browser session handling.
+- `src/sierra_agent/templates/index.html` — camp-themed web chat interface.
 - `tests/test_tools.py` — deterministic business-rule tests.
 - `tests/test_agent.py` — agent-loop tests using a fake OpenAI client.
+- `tests/test_config.py` — configuration validation test.
+- `tests/test_web.py` — browser-session isolation test.
 
 ## Test
 
@@ -111,8 +133,10 @@ They cover:
 - USPS check-in date construction.
 - Out-of-stock room filtering.
 - Promotion boundaries, normalization, and stable code generation.
-- Plain responses, single and multiple tool calls, session continuity, and the
-  tool-round limit.
+- Startup validation for malformed catalog data and invalid configuration.
+- Plain responses, single and multiple tool calls, failed-turn recovery, and
+  the tool-round limit.
+- Browser-session isolation and redacted execution traces.
 
 Before delivery, manually check normal chat, missing and incorrect reservation
 details, broad and specific recommendations, API failure behavior, and CLI
@@ -121,13 +145,15 @@ the injected-clock unit tests.
 
 ## Design decisions and limits
 
-- `gpt-4o-mini` keeps early testing fast and inexpensive. The model is an
-  environment setting so no code change is needed to move to `gpt-4o`.
+- The model is an environment setting, so no code change is needed to compare
+  models available to the OpenAI project.
 - The prompt is separate from orchestration so conversation design can evolve
   without changing the agent loop.
 - Tool logic is deterministic and receives an injectable clock for reliable
   boundary tests.
 - Customer emails, reservation details, API keys, and secrets are never logged.
+- Web sessions and developer traces are in memory only. A production app would
+  need bounded session storage, authentication, and a configured cookie secret.
 - Codes are generated but cannot be redeemed because no commerce backend is
   provided. A production promotion service would issue, audit, and redeem them.
 - A production catalog should replace the full-catalog tool with search or

@@ -1,5 +1,6 @@
 """Tests for the agent loop using a fake OpenAI client."""
 
+import json
 from types import SimpleNamespace
 from typing import Any
 
@@ -100,6 +101,11 @@ def test_executes_tool_and_returns_output_to_model() -> None:
     assert output["type"] == "function_call_output"
     assert output["call_id"] == "call-1"
     assert '"ok":true' in output["output"]
+    trace = agent.last_trace
+    assert trace["outcome"] == "completed"
+    assert trace["tools"] == [{"name": "lookup_reservation", "outcome": "completed"}]
+    assert isinstance(trace["duration_ms"], int)
+    assert call.arguments not in json.dumps(trace)
 
 
 def test_handles_multiple_tool_calls_from_one_response() -> None:
@@ -137,5 +143,7 @@ def test_failed_tool_loop_keeps_last_successful_session_checkpoint() -> None:
     with pytest.raises(AgentLoopError, match="tool-call limit"):
         agent.reply("Keep calling tools.")
 
+    assert agent.last_trace["outcome"] == "failed"
+    assert agent.last_trace["error"] == "AgentLoopError"
     assert agent.reply("Retry my request") == "Let's try that again."
     assert client.responses.requests[-1]["previous_response_id"] == "response-1"

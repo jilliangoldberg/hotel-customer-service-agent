@@ -87,6 +87,18 @@
         margin: 10px auto 0;
         background: var(--pine);
       }
+      #trace {
+        margin-top: 16px;
+        color: var(--pine);
+      }
+      #trace pre {
+        margin: 8px 0 0;
+        padding: 10px;
+        border-radius: 10px;
+        background: var(--paper);
+        font: 0.85rem/1.4 monospace;
+        white-space: pre-wrap;
+      }
     </style>
   </head>
   <body>
@@ -103,12 +115,18 @@
         <button type="submit">Send 🛏️</button>
       </form>
       <button id="new-trail" type="button">Start a new chat</button>
+      <details id="trace" hidden>
+        <summary>Developer trace</summary>
+        <pre id="trace-text"></pre>
+      </details>
     </main>
     <script>
       const log = document.getElementById("log");
       const form = document.getElementById("chat-form");
       const input = document.getElementById("message");
       const sendBtn = form.querySelector("button");
+      const tracePanel = document.getElementById("trace");
+      const traceText = document.getElementById("trace-text");
 
       function addMsg(role, text) {
         const div = document.createElement("div");
@@ -116,6 +134,19 @@
         div.textContent = text;
         log.appendChild(div);
         log.scrollTop = log.scrollHeight;
+      }
+
+      function showTrace(trace) {
+        tracePanel.hidden = !trace;
+        if (!trace) return;
+        const tools = trace.tools.map((tool) => `${tool.name}: ${tool.outcome}`);
+        traceText.textContent = [
+          `outcome: ${trace.outcome}`,
+          `tool rounds: ${trace.tool_rounds}`,
+          ...tools,
+          `duration: ${trace.duration_ms} ms`,
+          trace.error ? `error: ${trace.error}` : "",
+        ].filter(Boolean).join("\n");
       }
 
       form.addEventListener("submit", async (event) => {
@@ -133,8 +164,10 @@
           });
           const data = await res.json();
           addMsg("agent", data.reply || "Hmm, that path went quiet. Try again?");
+          showTrace(data.trace);
         } catch {
           addMsg("agent", "The guest desk connection failed. Please try again in a moment.");
+          showTrace(null);
         }
         sendBtn.disabled = false;
         input.focus();
@@ -144,6 +177,7 @@
         await fetch("/reset", { method: "POST" });
         log.innerHTML = "";
         addMsg("agent", "Fresh trail! What can I help with?");
+        showTrace(null);
         input.focus();
       });
     </script>

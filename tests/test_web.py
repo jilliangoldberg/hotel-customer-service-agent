@@ -14,6 +14,15 @@ class FakeAgent:
     def reply(self, message: str) -> str:
         return f"agent {self._label}: {message}"
 
+    @property
+    def last_trace(self) -> dict[str, object]:
+        return {
+            "outcome": "completed",
+            "tool_rounds": 0,
+            "tools": [],
+            "duration_ms": 1,
+        }
+
 
 @pytest.fixture
 def client_factory(
@@ -44,13 +53,14 @@ def test_each_browser_keeps_its_own_conversation(
     first_reply = first_browser.post("/chat", json={"message": "first"}).get_json()
     second_reply = second_browser.post("/chat", json={"message": "second"}).get_json()
 
-    assert first_reply == {"reply": "agent 1: first"}
-    assert second_reply == {"reply": "agent 2: second"}
+    assert first_reply["reply"] == "agent 1: first"
+    assert first_reply["trace"]["outcome"] == "completed"
+    assert second_reply["reply"] == "agent 2: second"
 
     assert first_browser.post("/reset").get_json() == {"ok": True}
-    assert first_browser.post("/chat", json={"message": "again"}).get_json() == {
-        "reply": "agent 3: again"
-    }
-    assert second_browser.post("/chat", json={"message": "still here"}).get_json() == {
-        "reply": "agent 2: still here"
-    }
+    assert first_browser.post("/chat", json={"message": "again"}).get_json()[
+        "reply"
+    ] == "agent 3: again"
+    assert second_browser.post("/chat", json={"message": "still here"}).get_json()[
+        "reply"
+    ] == "agent 2: still here"

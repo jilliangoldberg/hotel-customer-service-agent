@@ -52,6 +52,13 @@ def _setup_error():
     return jsonify({"reply": "The guest desk needs a quick setup check."}), 500
 
 
+def _chat_response(message: str, chat_session: ChatSession, status: int = 200):
+    return (
+        jsonify({"reply": message, "trace": chat_session.agent.last_trace}),
+        status,
+    )
+
+
 @app.get("/")
 def home():
     return render_template("index.html")
@@ -64,6 +71,7 @@ def chat():
     if not message:
         return jsonify({"error": "empty"}), 400
 
+    chat_session: ChatSession | None = None
     try:
         chat_session = get_agent()
         with chat_session.lock:
@@ -71,25 +79,23 @@ def chat():
     except (ConfigurationError, DataError):
         return _setup_error()
     except OpenAIError:
-        return jsonify(
-            {
-                "reply": (
-                    "I couldn't reach the support service. "
-                    "Please try again in a moment."
-                )
-            }
-        ), 502
+        if chat_session is not None:
+            return _chat_response(
+                "I couldn't reach the support service. Please try again in a moment.",
+                chat_session,
+                502,
+            )
+        return _setup_error()
     except (AgentLoopError, ValueError):
-        return jsonify(
-            {
-                "reply": (
-                    "I hit an unexpected issue. "
-                    "Please try your request again."
-                )
-            }
-        ), 500
+        if chat_session is not None:
+            return _chat_response(
+                "I hit an unexpected issue. Please try your request again.",
+                chat_session,
+                500,
+            )
+        return _setup_error()
 
-    return jsonify({"reply": reply})
+    return _chat_response(reply, chat_session)
 
 
 @app.post("/reset")
