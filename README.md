@@ -104,20 +104,24 @@ trace” panel.
 - `.env.example` — safe configuration template.
 - `.gitignore` — excludes secrets, environments, and generated files.
 - `pyproject.toml` — package metadata, dependencies, test settings, and CLI.
-- `data/guest_reservations.json` — static reservation appendix.
-- `data/room_catalog.json` — static room appendix.
-- `src/sierra_agent/__init__.py` — package marker.
-- `src/sierra_agent/__main__.py` — terminal input, output, and safe failures.
-- `src/sierra_agent/config.py` — environment loading and validation.
-- `src/sierra_agent/prompt.py` — brand voice and conversation rules.
-- `src/sierra_agent/tools.py` — schemas, data loading, tool logic, and dispatch.
-- `src/sierra_agent/agent.py` — Responses API and tool-calling loop.
-- `src/sierra_agent/web.py` — local Flask chat and per-browser session handling.
-- `src/sierra_agent/templates/index.html` — camp-themed web chat interface.
-- `tests/test_tools.py` — deterministic business-rule tests.
-- `tests/test_agent.py` — agent-loop tests using a fake OpenAI client.
-- `tests/test_config.py` — configuration validation test.
-- `tests/test_web.py` — browser-session isolation test.
+- `data/`
+  - `guest_reservations.json` — static reservation appendix.
+  - `room_catalog.json` — static room appendix.
+- `src/sierra_agent/`
+  - `__init__.py` — package marker.
+  - `__main__.py` — terminal input, output, and safe failures.
+  - `agent.py` — Responses API and tool-calling loop.
+  - `config.py` — environment loading and validation.
+  - `prompt.py` — brand voice and conversation rules.
+  - `tools.py` — schemas, data loading, tool logic, and dispatch.
+  - `web.py` — local Flask chat and per-browser session handling.
+  - `templates/`
+    - `index.html` — camp-themed web chat interface.
+- `tests/`
+  - `test_agent.py` — agent-loop tests using a fake OpenAI client.
+  - `test_config.py` — configuration validation test.
+  - `test_tools.py` — deterministic business-rule tests.
+  - `test_web.py` — browser-session isolation test.
 
 ## Test
 
@@ -143,20 +147,56 @@ details, broad and specific recommendations, API failure behavior, and CLI
 exit. Promotion success and failure paths can be demonstrated at any hour by
 the injected-clock unit tests.
 
-## Design decisions and limits
+## Decision log
 
-- The model is an environment setting, so no code change is needed to compare
-  models available to the OpenAI project.
-- The prompt is separate from orchestration so conversation design can evolve
-  without changing the agent loop.
-- Tool logic is deterministic and receives an injectable clock for reliable
-  boundary tests.
-- Customer emails, reservation details, API keys, and secrets are never logged.
-- Web sessions and developer traces are in memory only. A production app would
-  need bounded session storage, authentication, and a configured cookie secret.
-- Codes are generated but cannot be redeemed because no commerce backend is
-  provided. A production promotion service would issue, audit, and redeem them.
-- A production catalog should replace the full-catalog tool with search or
-  retrieval as it grows.
-- The data files currently contain only the complete sample records supplied in
-  the brief. Replace them unchanged when the full appendices are available.
+### Model for conversation; code for truth
+The model interprets requests, asks for missing details, and writes friendly
+responses. Python tools own reservations, availability, promotion timing, and promo-code
+generation. This makes customer-facing facts testable rather than prompt-only.
+
+### Strict tool contracts and server-side validation
+Tool schemas guide the model, but Python validates inputs and data again.
+Model output is external input, so a strict schema is helpful but not a
+security boundary on its own.
+
+### Privacy-preserving reservation lookup
+An reservation is found only when email and reservation number both match. All misses return
+the same result, so the agent cannot reveal which identifier was incorrect.
+
+### Explicit capability boundaries
+The agent must not invent links, cart actions, policies, or other unsupported
+facts. New customer-facing capabilities require a tool or trusted data source
+before the model can offer them.
+
+### Per-browser conversation state
+The terminal has one conversation per process. The web app gives each browser
+an opaque signed session ID and a separate agent, preventing one visitor's
+context from appearing in another visitor's chat.
+
+### No automatic retries after incomplete turns
+The agent keeps the last completed conversation checkpoint if a request fails,
+instead of silently repeating work. Customers retry intentionally. Future tools
+that change data, such as refunds, must also use idempotency keys to prevent
+duplicate actions.
+
+### Redacted observability
+Each turn records tool names/outcomes, tool rounds, duration, and error class.
+The trace deliberately excludes messages, emails, reservation numbers, raw tool
+data, API keys, and model reasoning, so failures can be diagnosed without
+logging private customer data.
+
+### Minimal, risk-based testing
+Tests use fake OpenAI responses and an injectable clock, so they are fast,
+deterministic, and cost nothing. They protect high-risk contracts such as
+privacy-safe lookup failures, promo boundaries, malformed data, session
+isolation, recovery after failed turns, and trace redaction.
+
+### Known limits
+- Web sessions and traces are in-memory only. Production needs bounded shared
+  storage, authentication, a configured cookie secret, and rate limits.
+- The promotion code can be generated but not redeemed; production requires an
+  issuance and redemption service.
+- Full-catalog recommendations suit the small sample data. A larger catalog
+  needs deterministic search or retrieval.
+- Conversation input is sent to OpenAI to generate a response. Its handling is
+  governed by the account's configured data controls.
