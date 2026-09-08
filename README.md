@@ -69,21 +69,27 @@ The web app has two views:
 - **Customer** — Chat with the support agent
 - **Developer** — Run eval scenarios and evaluate results from agent testing
 
+
+
 ## Current Features
 
 - 🗓️ **Reservation status:** Looks up a reservation using an email and reservation number. Returns the status and a USPS check-in date when available. Failed lookups do not reveal which identifier was incorrect.
 - 🛏️ **Room recommendations:** Suggests only available catalog items. The agent may ask one clarifying question for broad requests.
 - 🌅 **Early Risers Promotion:** Helps customers claim one daily code per email after an explicit request and a verified 8:00 AM to 10:00 AM Pacific-time window.
 
+
+
 ## How It Works
+
+The **model** handles conversation, intent, and tool selection. **Python scripts** handle the facts and rules that must stay deterministic and consistent, such as reservation matching, availability, time checks, check-in dates, and more.
 
 When a customer sends a message:
 
 1. The terminal or web app passes it to the model.
-2. The model decides whether it needs information from a reservation, room, or promotion tool.
-3. If so, Python validates the request, runs the tool, and returns the result to the model.
+2. The model decides whether it needs a reservation, room, or promotion tool. It may call several, across up to five tool rounds per turn.
+3. Python validates each request as untrusted input, runs the tool, and returns the result to the model.
 4. The model writes a customer-friendly response.
-5. A final policy check catches known unsupported promises or actions before the response is shown.
+5. A final policy check runs before anything is shown: on a known unsupported promise or action it requests one rewrite, then falls back to a safe capability list.
 
 Customer messages are sent to OpenAI to generate responses and are handled according to the account's configured data controls.
 
@@ -111,6 +117,8 @@ Supporting files:
 - `tests/` — deterministic unit and integration tests
 - `eval-results/` — generated eval reports
 
+
+
 ## Testing
 
 Run the test suite:
@@ -119,13 +127,13 @@ Run the test suite:
 pytest
 ```
 
-Tests use fake OpenAI responses, so they do not call the API or spend credits.
+Tests use fake OpenAI responses, so they do not call the API or spend credits. They protect the high-risk contracts: privacy-safe lookup failures, promotion time boundaries, malformed data, browser-session isolation, recovery after a failed turn, the tool-round limit, and trace redaction.
 
 ## Simulated Evals
 
 Simulated evals create a full agent-to-agent conversation. One LLM role plays a customer with a specific goal, facts, and speaking style; the real support agent responds; then a separate judge request scores the completed interaction. This tests realistic, messy conversations that are difficult to cover comprehensively with deterministic or manual tests.
 
-The customer and judge use `OPENAI_EVAL_MODEL`, which defaults to `OPENAI_MODEL`. Choosing a different eval model from the support agent can reduce correlated self-evaluation bias. Running scenarios calls the OpenAI API and may spend credits; `--list` does not.
+The customer and judge use `OPENAI_EVAL_MODEL`, which defaults to `OPENAI_MODEL`. Choosing a different eval model from the support agent can reduce correlated self-evaluation bias. Running scenarios calls the OpenAI API and consumes billable usage; `--list` does not.
 
 List available scenarios:
 
@@ -169,17 +177,30 @@ The model handles intent, missing-information questions, tool selection, and ton
 
 **Safety and privacy in code**
 
-The prompt defines capability boundaries, while narrow Python rules catch unsupported promises and request a rewrite or return a safe fallback. Failed reservation lookups stay generic, browser sessions are isolated, and developer traces omit customer messages, identifiers, tool data, and model reasoning.
+The prompt defines capability boundaries, but instructions alone cannot stop a model from promising an escalation or recommending an outside brand. `policy.py` adds a narrow set of rules tied to observed failures: the final reply is checked, an unsafe one gets a single constrained rewrite, and a still-unsafe one is replaced by a fallback built from enabled capabilities. `PolicyContext` records the catalog items a tool actually returned, so off-list recommendations are caught rather than just discouraged. The same policy runs at runtime and as eval gates — defense in depth for known failures, not a general policy engine.
+
+Failed reservation lookups stay generic so they cannot reveal which identifier was wrong, browser sessions are isolated, and developer traces omit customer messages, identifiers, tool data, and model reasoning.
 
 **LLM customer simulation and judging**
 
-Behavioral evals use separate customer and judge requests, while code-based gates enforce selected hard requirements. This combines realistic multi-turn testing with repeatable checks.
+Behavioral evals use separate customer and judge requests. Deterministic gates override a passing judge on agent errors, missing required tools, forbidden tools, or known policy violations. One run is a single non-deterministic trial, not a reliability estimate.
 
-### Other Technical Decisions
+#### Other Technical Decisions
 
 - Conversations stay in memory to keep local setup simple. The terminal has one conversation per process, while the web app separates browsers with signed session cookies.
 - Failed turns return to the last completed conversation checkpoint instead of retrying automatically.
 - Local JSON data and full-catalog recommendations keep the sample app self-contained; larger production data would need databases and retrieval.
+
+
+
+## Known Limitations
+
+- Sessions and traces are in-memory: no persistence, no authentication, and an ephemeral cookie secret. Production needs shared bounded storage and a fixed secret.
+- The Early Risers code can be generated but not redeemed.
+- Recommendations pass the full catalog to the model; a larger catalog needs search or retrieval.
+- Evals run one trial per scenario. There is no pass-rate, regression threshold, or cost and latency check_in_date yet.
+
+
 
 ## 🚀 Future Improvements
 
