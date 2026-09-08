@@ -6,12 +6,8 @@ from typing import Any
 
 import pytest
 
-from sierra_agent.agent import (
-    SAFE_CAPABILITY_FALLBACK,
-    AgentLoopError,
-    SierraAgent,
-    find_capability_violations,
-)
+from sierra_agent.agent import AgentLoopError, SierraAgent
+from sierra_agent.policy import DEFAULT_POLICY, PolicyContext
 
 
 class FakeResponses:
@@ -33,8 +29,20 @@ class FakeTools:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
 
+    @property
+    def definitions(self) -> list[dict[str, Any]]:
+        return []
+
     def execute(self, name: str, arguments: str) -> dict[str, Any]:
         self.calls.append((name, arguments))
+        if name == "lookup_reservation":
+            return {
+                "ok": True,
+                "found": True,
+                "reservation_number": "#H001",
+                "status": "confirmed",
+                "check_in_date": None,
+            }
         return {"ok": True, "tool": name}
 
 
@@ -64,7 +72,7 @@ def make_agent(
     agent = SierraAgent(
         client=client,  # type: ignore[arg-type]
         model="gpt-4o-mini",
-        tools=tools,  # type: ignore[arg-type]
+        tools=tools,
         max_tool_rounds=max_tool_rounds,
     )
     return agent, client, tools
@@ -108,7 +116,7 @@ def test_executes_tool_and_returns_output_to_model() -> None:
     assert '"ok":true' in output["output"]
     trace = agent.last_trace
     assert trace["outcome"] == "completed"
-    assert trace["tools"] == [{"name": "lookup_reservation", "outcome": "completed"}]
+    assert trace["tools"] == [{"name": "lookup_reservation", "outcome": "found"}]
     assert isinstance(trace["duration_ms"], int)
     assert call.arguments not in json.dumps(trace)
 
@@ -168,29 +176,35 @@ def test_rewrites_an_unsupported_capability_promise() -> None:
     rewrite_request = client.responses.requests[1]
     assert rewrite_request["previous_response_id"] == "response-1"
     assert rewrite_request["tool_choice"] == "none"
-    assert "Remove all promises" in rewrite_request["instructions"]
+    assert "Remove unsupported commitments" in rewrite_request["instructions"]
     assert agent.last_trace["response_policy"] == "rewritten"
     assert unsafe not in json.dumps(agent.last_trace)
 
 
 def test_returns_safe_fallback_when_rewrite_remains_unsafe() -> None:
-    agent, _, _ = make_agent(
+    agent, client, _ = make_agent(
         [
             text_response("response-1", "I will process your refund."),
             text_response("response-2", "I've contacted a manager for you."),
+            text_response("response-3", "How can I help?"),
         ]
     )
 
-    assert agent.reply("Refund my reservation.") == SAFE_CAPABILITY_FALLBACK
+    assert agent.reply("Refund my reservation.") == DEFAULT_POLICY.fallback
     assert agent.last_trace["response_policy"] == "fallback"
+    assert agent.reply("What can you do?") == "How can I help?"
+    assert "previous_response_id" not in client.responses.requests[-1]
 
 
 def test_flags_off_catalog_recommendations() -> None:
-    assert find_capability_violations(
+    context = PolicyContext(
+        room_names={"Garden King Room"}
+    )
+    assert DEFAULT_POLICY.find_violations(
         "I recommend Marriott for your hike.",
-        {"Garden King Room"},
+        context,
     ) == ("off_catalog_recommendation",)
-    assert find_capability_violations(
+    assert DEFAULT_POLICY.find_violations(
         "I recommend Garden King Room for your hike.",
-        {"Garden King Room"},
+        context,
     ) == ()

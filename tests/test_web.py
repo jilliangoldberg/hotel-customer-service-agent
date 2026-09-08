@@ -67,6 +67,19 @@ def test_each_browser_keeps_its_own_conversation(
     ] == "agent 2: still here"
 
 
+def test_initial_and_reset_greetings_list_supported_options(
+    client_factory: Callable[[], object],
+) -> None:
+    browser = client_factory()
+    page = browser.get("/").get_data(as_text=True)
+    greeting = (
+        "Welcome to Trailhead Hotel! Ask me about a reservation, rooms, or the Early "
+        "Risers promo. 🛎️"
+    )
+
+    assert page.count(greeting) == 2
+
+
 def test_eval_scenario_list_and_missing_result(
     client_factory: Callable[[], object],
 ) -> None:

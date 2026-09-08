@@ -1,72 +1,18 @@
 """The minimal OpenAI Responses API and tool-calling loop."""
 
 import json
-import re
 from time import perf_counter
 from typing import Any
 
 from openai import OpenAI
 
-from sierra_agent.prompt import CAPABILITY_REWRITE_INSTRUCTIONS, SYSTEM_PROMPT
-from sierra_agent.tools import HotelTools, TOOL_DEFINITIONS
+from sierra_agent.policy import CapabilityPolicy, DEFAULT_POLICY, PolicyContext
+from sierra_agent.prompt import SYSTEM_PROMPT
+from sierra_agent.tools import ToolHost
 
 
 class AgentLoopError(RuntimeError):
     """Raised when the model cannot produce a safe final response."""
-
-
-SAFE_CAPABILITY_FALLBACK = (
-    "I can’t help with that here. I can check a reservation’s status, suggest "
-    "available Sierra rooms, or help with the Early Risers Promotion."
-)
-
-_FUTURE_UNSUPPORTED_ACTION = re.compile(
-    r"\b(?:i(?:['’]ll|\s+(?:will|can|am going to))|"
-    r"we(?:['’]ll|\s+(?:will|can|are going to)))\s+"
-    r"(?:escalate|contact|reach out to|follow up(?:\s+with)?|"
-    r"keep (?:you )?updated|notify|process|cancel|refund|send)\b",
-    re.IGNORECASE,
-)
-_PAST_UNSUPPORTED_ACTION = re.compile(
-    r"\b(?:i(?:['’]ve|\s+(?:have|am))|"
-    r"we(?:['’]ve|\s+(?:have|are)))\s+"
-    r"(?:escalated|contacted|reached out|followed up|notified|processed|"
-    r"cancelled|refunded|sent|noted)\b",
-    re.IGNORECASE,
-)
-_RECOMMENDATION = re.compile(
-    r"\b(?:recommend|suggest|consider|look at|check out)\b",
-    re.IGNORECASE,
-)
-
-
-def find_capability_violations(
-    text: str,
-    room_names: set[str] | None = None,
-) -> tuple[str, ...]:
-    """Return policy labels for unsupported customer-facing claims.
-
-    Room recommendations must name an item returned by the catalog tool.
-    This intentionally applies only to explicit recommendation language, so
-    ordinary reservation-status and promotion responses are not constrained by it.
-    """
-
-    violations: list[str] = []
-    if _FUTURE_UNSUPPORTED_ACTION.search(text):
-        violations.append("unsupported_future_action")
-    if _PAST_UNSUPPORTED_ACTION.search(text):
-        violations.append("unsupported_claimed_action")
-
-    allowed_names = {
-        name.casefold() for name in (room_names or set()) if name.strip()
-    }
-    for sentence in re.split(r"(?<=[.!?])\s+|\n+", text):
-        if not _RECOMMENDATION.search(sentence):
-            continue
-        if not any(name in sentence.casefold() for name in allowed_names):
-            violations.append("off_catalog_recommendation")
-            break
-    return tuple(violations)
 
 
 class SierraAgent:
@@ -76,15 +22,18 @@ class SierraAgent:
         self,
         client: OpenAI,
         model: str,
-        tools: HotelTools,
+        tools: ToolHost,
+        policy: CapabilityPolicy = DEFAULT_POLICY,
+        # Healthy turns need 1–2 rounds; 5 is for retries
         max_tool_rounds: int = 5,
     ) -> None:
         self._client = client
         self._model = model
         self._tools = tools
+        self._policy = policy
         self._max_tool_rounds = max_tool_rounds
         self._previous_response_id: str | None = None
-        self._known_room_names: set[str] = set()
+        self._policy_context = PolicyContext()
         self._last_trace: dict[str, Any] = {}
 
     @property
@@ -100,8 +49,8 @@ class SierraAgent:
         """Send one customer message and resolve any requested tool calls."""
 
         previous_response_id = self._previous_response_id
-        previous_room_names = set(self._known_room_names)
-        known_room_names = set(previous_room_names)
+        previous_policy_context = self._policy_context.copy()
+        policy_context = previous_policy_context.copy()
         started_at = perf_counter()
         trace: dict[str, Any] = {"tools": [], "tool_rounds": 0}
         try:
@@ -124,10 +73,12 @@ class SierraAgent:
                     text, response_id, policy_outcome = self._safe_final_response(
                         response,
                         text,
-                        known_room_names,
+                        policy_context,
                     )
                     self._previous_response_id = response_id
-                    self._known_room_names = known_room_names
+                    self._policy_context = (
+                        policy_context if response_id is not None else PolicyContext()
+                    )
                     trace["outcome"] = "completed"
                     trace["response_policy"] = policy_outcome
                     return text
@@ -140,13 +91,7 @@ class SierraAgent:
                 tool_outputs = []
                 for call in tool_calls:
                     result = self._tools.execute(call.name, call.arguments)
-                    if call.name == "get_available_rooms":
-                        known_room_names.update(
-                            room["name"]
-                            for room in result.get("rooms", [])
-                            if isinstance(room, dict)
-                            and isinstance(room.get("name"), str)
-                        )
+                    policy_context.update(call.name, result)
                     trace["tools"].append(
                         {
                             "name": call.name,
@@ -167,7 +112,7 @@ class SierraAgent:
                 )
         except Exception as error:
             self._previous_response_id = previous_response_id
-            self._known_room_names = previous_room_names
+            self._policy_context = previous_policy_context
             trace["outcome"] = "failed"
             trace["error"] = type(error).__name__
             raise
@@ -179,11 +124,11 @@ class SierraAgent:
         self,
         response: Any,
         text: str,
-        room_names: set[str],
-    ) -> tuple[str, str, str]:
+        policy_context: PolicyContext,
+    ) -> tuple[str, str | None, str]:
         """Return a compliant final response, rewriting once when needed."""
 
-        if not find_capability_violations(text, room_names):
+        if not self._policy.find_violations(text, policy_context):
             return text, response.id, "passed"
 
         corrected = self._create_response(
@@ -192,7 +137,7 @@ class SierraAgent:
                 "the correction instructions."
             ),
             previous_response_id=response.id,
-            instructions=f"{SYSTEM_PROMPT}\n\n{CAPABILITY_REWRITE_INSTRUCTIONS}",
+            instructions=f"{SYSTEM_PROMPT}\n\n{self._policy.rewrite_instructions}",
             tool_choice="none",
         )
         corrected_text = corrected.output_text.strip()
@@ -202,10 +147,16 @@ class SierraAgent:
         if (
             corrected_text
             and not corrected_tool_calls
-            and not find_capability_violations(corrected_text, room_names)
+            and not self._policy.find_violations(
+                corrected_text,
+                policy_context,
+            )
         ):
             return corrected_text, corrected.id, "rewritten"
-        return SAFE_CAPABILITY_FALLBACK, corrected.id, "fallback"
+        # The fallback is generated locally, so no API response represents what
+        # the customer saw. Reset the remote chain rather than continuing from
+        # an unsafe hidden draft on the next turn.
+        return self._policy.fallback, None, "fallback"
 
     @staticmethod
     def _tool_outcome(result: dict[str, Any]) -> str:
@@ -215,6 +166,8 @@ class SierraAgent:
             return "rejected"
         if "found" in result:
             return "found" if result["found"] else "not_found"
+        if "available" in result:
+            return "open" if result["available"] else "closed"
         if "eligible" in result:
             return "eligible" if result["eligible"] else "not_eligible"
         return "completed"
@@ -230,7 +183,7 @@ class SierraAgent:
             "model": self._model,
             "instructions": instructions,
             "input": input_items,
-            "tools": TOOL_DEFINITIONS,
+            "tools": self._tools.definitions,
             "parallel_tool_calls": True,
         }
         if previous_response_id is not None:

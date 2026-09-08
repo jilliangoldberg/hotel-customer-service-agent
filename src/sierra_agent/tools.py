@@ -1,13 +1,14 @@
 """Deterministic tools available to the language model."""
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, time
 import hashlib
 import hmac
 import json
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Protocol
 from zoneinfo import ZoneInfo
 
 
@@ -16,75 +17,26 @@ EARLY_RISERS_START = time(8, 0)
 EARLY_RISERS_END = time(10, 0)
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
-TOOL_DEFINITIONS: list[dict[str, Any]] = [
-    {
-        "type": "function",
-        "name": "lookup_reservation",
-        "description": (
-            "Look up one reservation after the customer has given both their email "
-            "and reservation number. Call only when both values are present. Pass "
-            "them as typed; spacing, capitalization, a missing #, and extra "
-            "symbols are normalized in Python. Do not call with only one field. "
-            "A miss does not say which identifier was wrong."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "description": "The customer's complete email address.",
-                },
-                "reservation_number": {
-                    "type": "string",
-                    "description": "The complete reservation number, such as #H001.",
-                },
-            },
-            "required": ["email", "reservation_number"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    },
-    {
-        "type": "function",
-        "name": "get_available_rooms",
-        "description": (
-            "Return every available catalog item. Call before recommending "
-            "rooms. Recommend only items and details in this result. Do not "
-            "invent rooms, prices, or availability. The full available list "
-            "is returned because the sample catalog is small."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    },
-    {
-        "type": "function",
-        "name": "create_early_risers_code",
-        "description": (
-            "Create today's Early Risers code for one email. Call only after "
-            "an explicit request for the code and after the customer has given "
-            "an email. Do not call for an informational question about the "
-            "promotion. Python checks Pacific Time (8:00 AM inclusive to "
-            "10:00 AM exclusive) and builds the code."
-        ),
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "email": {
-                    "type": "string",
-                    "description": "The customer's complete email address.",
-                }
-            },
-            "required": ["email"],
-            "additionalProperties": False,
-        },
-        "strict": True,
-    },
-]
+
+@dataclass(frozen=True)
+class ToolSpec:
+    """A model-facing schema paired with its server-side implementation."""
+
+    definition: dict[str, Any]
+    handler: Callable[..., dict[str, Any]]
+
+    @property
+    def name(self) -> str:
+        return str(self.definition["name"])
+
+
+class ToolHost(Protocol):
+    """The small tool interface required by the agent and eval harness."""
+
+    @property
+    def definitions(self) -> list[dict[str, Any]]: ...
+
+    def execute(self, name: str, arguments: str) -> dict[str, Any]: ...
 
 
 def _reject(error: str, hint: str) -> dict[str, Any]:
@@ -126,10 +78,143 @@ class HotelTools:
                 "Tags",
             },
         )
-        self._validate_reservations()
         self._validate_rooms()
+        self._validate_reservations()
         self._promotion_secret = promotion_secret.encode("utf-8")
         self._now = now or (lambda: datetime.now(PACIFIC_TIME))
+        self._specs = self._build_specs()
+
+    def _build_specs(self) -> tuple[ToolSpec, ...]:
+        """Register every schema beside the handler that implements it."""
+
+        return (
+            ToolSpec(
+                definition={
+                    "type": "function",
+                    "name": "lookup_reservation",
+                    "description": (
+                        "Look up one reservation after the customer has given both "
+                        "their email and reservation number. Call only when both values "
+                        "are present. Pass them as typed; spacing, capitalization, "
+                        "a missing #, and extra symbols are normalized in Python. "
+                        "Do not call with only one field. A miss does not say "
+                        "which identifier was wrong."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "email": {
+                                "type": "string",
+                                "description": (
+                                    "The customer's complete email address."
+                                ),
+                            },
+                            "reservation_number": {
+                                "type": "string",
+                                "description": (
+                                    "The complete reservation number, such as #H001."
+                                ),
+                            },
+                        },
+                        "required": ["email", "reservation_number"],
+                        "additionalProperties": False,
+                    },
+                    "strict": True,
+                },
+                handler=self.lookup_reservation,
+            ),
+            ToolSpec(
+                definition={
+                    "type": "function",
+                    "name": "get_available_rooms",
+                    "description": (
+                        "Return every available catalog item. Call before "
+                        "recommending rooms. Recommend only items and details "
+                        "in this result. Do not invent rooms, prices, or "
+                        "availability. The full available list is returned because "
+                        "the sample catalog is small."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                        "additionalProperties": False,
+                    },
+                    "strict": True,
+                },
+                handler=self.get_available_rooms,
+            ),
+            ToolSpec(
+                definition={
+                    "type": "function",
+                    "name": "check_early_risers_window",
+                    "description": (
+                        "Check whether the Early Risers Promotion is currently "
+                        "open, without collecting an email. Call this first when "
+                        "a customer explicitly requests a code. If the window is "
+                        "closed, explain the hours and do not ask for an email. "
+                        "If it is open, then ask for the email needed to create "
+                        "the code. Do not call for a purely informational question."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {},
+                        "required": [],
+                        "additionalProperties": False,
+                    },
+                    "strict": True,
+                },
+                handler=self.check_early_risers_window,
+            ),
+            ToolSpec(
+                definition={
+                    "type": "function",
+                    "name": "create_early_risers_code",
+                    "description": (
+                        "Create today's Early Risers code for one email. Call only "
+                        "after check_early_risers_window returned available=true, "
+                        "and pass the window_token from that result. The customer "
+                        "must have explicitly requested a code and given an email. "
+                        "Do not call for an informational question. Python verifies "
+                        "the token and window again before building the code."
+                    ),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "email": {
+                                "type": "string",
+                                "description": (
+                                    "The customer's complete email address."
+                                ),
+                            },
+                            "window_token": {
+                                "type": "string",
+                                "description": (
+                                    "The opaque window_token returned by the "
+                                    "successful window check."
+                                ),
+                            },
+                        },
+                        "required": ["email", "window_token"],
+                        "additionalProperties": False,
+                    },
+                    "strict": True,
+                },
+                handler=self.create_early_risers_code,
+            ),
+        )
+
+    @property
+    def specs(self) -> tuple[ToolSpec, ...]:
+        """Return the registered schemas and handlers for inspection."""
+
+        return self._specs
+
+    @property
+    def definitions(self) -> list[dict[str, Any]]:
+        """Return the OpenAI schemas for all registered tools."""
+
+        return [spec.definition for spec in self._specs]
 
     @staticmethod
     def _load_records(path: Path, required_fields: set[str]) -> list[dict[str, Any]]:
@@ -162,6 +247,11 @@ class HotelTools:
     def _validate_reservations(self) -> None:
         """Validate reservation fields once, before customer requests arrive."""
 
+        known_room_type_ids = {
+            str(room["RoomTypeID"]).strip()
+            for room in self._rooms
+            if self._has_text(room.get("RoomTypeID"))
+        }
         for index, reservation in enumerate(self._reservations):
             if self._normalize_email(reservation["Email"]) is None:
                 raise DataError(
@@ -186,6 +276,17 @@ class HotelTools:
             ):
                 raise DataError(
                     f"guest_reservations.json record {index} has invalid RoomsReserved."
+                )
+            unknown_room_type_ids = sorted(
+                str(room).strip()
+                for room in rooms
+                if str(room).strip() not in known_room_type_ids
+            )
+            if unknown_room_type_ids:
+                names = ", ".join(unknown_room_type_ids)
+                raise DataError(
+                    f"guest_reservations.json record {index} references unknown "
+                    f"room RoomTypeID(s): {names}."
                 )
 
     def _validate_rooms(self) -> None:
@@ -301,7 +402,52 @@ class HotelTools:
 
         return {"ok": True, "rooms": rooms}
 
-    def create_early_risers_code(self, email: str) -> dict[str, Any]:
+    def _pacific_now(self) -> datetime:
+        current = self._now()
+        if current.tzinfo is None:
+            raise ValueError("The clock must return a timezone-aware datetime.")
+        return current.astimezone(PACIFIC_TIME)
+
+    @staticmethod
+    def _early_risers_is_open(pacific_now: datetime) -> bool:
+        local_time = pacific_now.time().replace(tzinfo=None)
+        return EARLY_RISERS_START <= local_time < EARLY_RISERS_END
+
+    def check_early_risers_window(self) -> dict[str, Any]:
+        """Check promotion timing without requesting customer information."""
+
+        pacific_now = self._pacific_now()
+        available = self._early_risers_is_open(pacific_now)
+        result: dict[str, Any] = {
+            "ok": True,
+            "available": available,
+            "hours": "8:00 AM to 10:00 AM",
+            "timezone": "Pacific Time",
+        }
+        if available:
+            result["window_token"] = self._promotion_window_token(pacific_now)
+        else:
+            result["reason"] = (
+                "The Early Risers Promotion is available from 8:00 AM until "
+                "10:00 AM Pacific Time."
+            )
+        return result
+
+    def _promotion_window_token(self, pacific_now: datetime) -> str:
+        """Return an opaque token proving an open-window check was observed."""
+
+        message = f"early-risers-window:{pacific_now.date().isoformat()}".encode()
+        return hmac.new(
+            self._promotion_secret,
+            message,
+            hashlib.sha256,
+        ).hexdigest()
+
+    def create_early_risers_code(
+        self,
+        email: str,
+        window_token: str,
+    ) -> dict[str, Any]:
         """Return a stable daily code when the current Pacific time is eligible."""
 
         normalized_email = self._normalize_email(email)
@@ -311,13 +457,9 @@ class HotelTools:
                 "Ask for a complete email address like name@domain.com.",
             )
 
-        current = self._now()
-        if current.tzinfo is None:
-            raise ValueError("The clock must return a timezone-aware datetime.")
-        pacific_now = current.astimezone(PACIFIC_TIME)
-        local_time = pacific_now.time().replace(tzinfo=None)
+        pacific_now = self._pacific_now()
 
-        if not EARLY_RISERS_START <= local_time < EARLY_RISERS_END:
+        if not self._early_risers_is_open(pacific_now):
             return {
                 "ok": True,
                 "eligible": False,
@@ -326,6 +468,16 @@ class HotelTools:
                     "10:00 AM Pacific Time."
                 ),
             }
+
+        expected_token = self._promotion_window_token(pacific_now)
+        if not isinstance(window_token, str) or not hmac.compare_digest(
+            window_token,
+            expected_token,
+        ):
+            return _reject(
+                "promotion_window_not_checked",
+                "Call check_early_risers_window first, then pass its window_token.",
+            )
 
         message = f"{pacific_now.date().isoformat()}:{normalized_email}".encode()
         digest = hmac.new(
@@ -355,21 +507,16 @@ class HotelTools:
                 "Call the tool again with the required fields from the schema.",
             )
 
-        handlers: dict[str, Callable[..., dict[str, Any]]] = {
-            "lookup_reservation": self.lookup_reservation,
-            "get_available_rooms": self.get_available_rooms,
-            "create_early_risers_code": self.create_early_risers_code,
-        }
-        handler = handlers.get(name)
-        if handler is None:
+        spec = next((item for item in self._specs if item.name == name), None)
+        if spec is None:
+            known = ", ".join(item.name for item in self._specs)
             return _reject(
                 "unknown_tool",
-                "Use only lookup_reservation, get_available_rooms, or "
-                "create_early_risers_code.",
+                f"Use only one of the registered tools: {known}.",
             )
 
         try:
-            return handler(**arguments)
+            return spec.handler(**arguments)
         except TypeError:
             return _reject(
                 "invalid_tool_arguments",

@@ -1,10 +1,20 @@
 # Trailhead Hotel Agent
 
-A small Python support agent for reservation check_in_date, room recommendations, and the Early Risers Promotion. It uses OpenAI tool calling without an agent framework and supports both terminal and local web chat.
+Welcome to your next adventure! 🏨
+
+The Trailhead Hotel Agent is your trail guide for:
+
+- Tracking down a reservation
+- Finding available rooms for your next outing
+- Claiming an Early Risers Promotion code
+
+Try it out in your terminal or local web browser. Happy camping! 🛎️
 
 ## Setup
 
 Requires Python 3.11 or newer.
+
+### 1. Install
 
 ```bash
 python -m venv .venv
@@ -13,11 +23,18 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-Set three values in `.env`:
+### 2. Configure
 
-- `OPENAI_API_KEY`: the provided API key. Never commit it.
-- `OPENAI_MODEL`: a model your OpenAI project can access. `gpt-4.1-mini` is a good low-cost development choice.
-- `PROMOTION_SECRET`: a private random value with at least 16 characters.
+Update the copied `.env` file:
+
+```dotenv
+OPENAI_API_KEY=your-api-key
+OPENAI_MODEL=gpt-4.1-mini
+OPENAI_EVAL_MODEL=
+PROMOTION_SECRET=paste-generated-secret-here
+```
+
+`OPENAI_EVAL_MODEL` is optional and defaults to `OPENAI_MODEL`. Use any models your OpenAI project can access.
 
 Generate a promotion secret with:
 
@@ -25,201 +42,163 @@ Generate a promotion secret with:
 python -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-Start the terminal chat:
+Paste the generated value into `PROMOTION_SECRET`.
+
+Never commit your `.env` file.
+
+### 3. Run
+
+Terminal chat:
 
 ```bash
 python -m sierra_agent
 ```
 
-Type `exit`, `quit`, or `Ctrl-C` to end the session.
+Type `exit`, `quit`, or `Ctrl-C` to stop.
 
-Start the local web chat:
+Local web chat:
 
 ```bash
 python -m sierra_agent.web
 ```
 
-Then open http://127.0.0.1:5050. Toggle **Customer** / **Developer** at the top. Customer is the hotel chat. Developer lists eval scenarios, shows saved transcripts and scores, and can run a scenario. “Start a new chat” resets only that browser's customer conversation.
+Then open [http://127.0.0.1:5050](http://127.0.0.1:5050).
 
-## Features
+The web app has two views:
 
-- **Reservation status:** Looks up a reservation from email plus reservation number, then returns status and a USPS check-in date when one exists. A miss does not reveal which identifier was wrong.
-- **Room recommendations:** Suggests only available catalog items. For a broad request, the agent may ask one clarifying question first.
-- **Early Risers Promotion:** Issues a daily discount code only after an explicit request and an email, and only between 8:00 AM and 10:00 AM Pacific Time. The same email gets the same code for that date.
+- **Customer** — Chat with the support agent
+- **Developer** — Run eval scenarios and evaluate results from agent testing
 
-## Architecture
+## Current Features
 
-```text
-Customer
-  -> terminal loop or local web chat
-  -> OpenAI Responses API
-  -> optional function call
-  -> deterministic Python tool
-  -> tool result sent to OpenAI
-  -> customer-facing text
-```
+- 🗓️ **Reservation status:** Looks up a reservation using an email and reservation number. Returns the status and a USPS check-in date when available. Failed lookups do not reveal which identifier was incorrect.
+- 🛏️ **Room recommendations:** Suggests only available catalog items. The agent may ask one clarifying question for broad requests.
+- 🌅 **Early Risers Promotion:** Helps customers claim one daily code per email after an explicit request and a verified 8:00 AM to 10:00 AM Pacific-time window.
 
-The model handles language, intent, missing-information questions, tool selection, and response tone. Python handles data access, validation, time, check-in dates, and discount codes.
+## How It Works
 
-Tool definitions use strict JSON schemas. Python validates again because model output must still be treated as external input. The loop supports multiple tool calls in one response and stops after five tool rounds.
+When a customer sends a message:
 
-The terminal has one in-memory conversation per process. The web app assigns each browser an isolated in-memory conversation using a signed session cookie; restarting the app clears those sessions. OpenAI handles API data according to the account's configured data controls.
+1. The terminal or web app passes it to the model.
+2. The model decides whether it needs information from a reservation, room, or promotion tool.
+3. If so, Python validates the request, runs the tool, and returns the result to the model.
+4. The model writes a customer-friendly response.
+5. A final policy check catches known unsupported promises or actions before the response is shown.
 
-Each turn also produces a redacted developer trace: tool names and outcomes, tool rounds, duration, final-response policy outcome, and an error class when relevant. It never includes customer messages, emails, reservation numbers, tool arguments/results, or model reasoning. The local web UI has a Customer chat and a Developer view for eval transcripts. Customer chat still shows the latest redacted trace in a collapsed “Developer trace” panel.
+Customer messages are sent to OpenAI to generate responses and are handled according to the account's configured data controls.
 
-## Design
+## Project Guide
 
-The loop matches the pattern in OpenAI's [Practical guide to building AI agents](https://openai.com/business/guides-and-resources/a-practical-guide-to-building-ai-agents/) and OpenAI's [Building effective agents](https://www.openai.com/engineering/building-effective-agents) and [Writing effective tools for agents](https://www.openai.com/engineering/writing-tools-for-agents): one model, tools as the contract, Python as ground truth, no agent framework.
+The main code lives in `src/sierra_agent/`:
 
-**One agent, not a workflow graph.** OpenAI recommends splitting into specialists only when tools overlap or the prompt becomes a nest of if/else. These three tools are distinct, so one loop is enough. Off-script asks (refunds, jailbreaks, mixed requests) stay on that loop: refuse or collect a missing field, then return to the real tools.
+- `__main__.py` — terminal chat entry point
+- `agent.py` — OpenAI tool-calling loop
+- `config.py` — environment configuration and validation
+- `tools.py` — reservation, catalog, and promotion tools
+- `prompt.py` — agent instructions and tone
+- `policy.py` — customer-response safety checks
+- `factory.py` — builds the shared agent used by every interface
+- `web.py` — local Flask app
+- `eval/` — simulated conversation evals and reports
+  - `scenarios.py` — customer scenarios and success criteria
+  - `harness.py` — runs the simulated conversations and judging
+  - `reports.py` — creates Markdown and JSON results
+  - `__main__.py` — command-line interface for running evals
 
-**Python owns facts.** The model handles language, missing details, and tone. Python owns matching, time, check_in_date URLs, and promo codes so those contracts stay testable.
+Supporting files:
 
-**Tool descriptions are the agent-computer interface.** Each schema says when to call, when not to, and that Python normalizes email and reservation numbers. Validation failures return a short `hint` the model can follow. A miss (`found: false`) stays generic so the agent cannot leak which identifier was wrong.
-
-**Final-response capability guard.** The system prompt defines capability boundaries, but prompt instructions alone cannot reliably prevent a model from promising an escalation, follow-up, refund, cancellation, or external recommendation. Before customer text is returned, Python checks for those narrow high-risk claims. It asks for one constrained rewrite; if that remains unsafe, it returns a fixed response limited to the three supported help categories.
-
-**Evals over a pytest case per conversation.** Pytest covers deterministic contracts. Simulated eval is the messy-conversation loop OpenAI describes: a customer LLM, the real agent, an LLM judge. New behavior is a new scenario or a higher turn limit, not a bigger unit matrix.
-
-## File map
-
-- `.env.example` — safe configuration template.
-- `.gitignore` — excludes secrets, environments, and generated files.
-- `pyproject.toml` — package metadata, dependencies, test settings, and CLI.
-- `data/`
-  - `guest_reservations.json` — static reservation appendix.
-  - `room_catalog.json` — static room appendix.
-- `src/sierra_agent/`
-  - `__init__.py` — package marker.
-  - `__main__.py` — terminal input, output, and safe failures.
-  - `agent.py` — Responses API and tool-calling loop.
-  - `config.py` — environment loading and validation.
-  - `prompt.py` — brand voice and conversation rules.
-  - `tools.py` — schemas, data loading, tool logic, and dispatch.
-  - `web.py` — local Flask chat and per-browser session handling.
-  - `templates/`
-    - `index.html` — camp-themed chat with a Customer / Developer toggle.
-  - `eval/`
-    - `__init__.py` — package marker.
-    - `__main__.py` — eval CLI.
-    - `harness.py` — simulated user, tool recording, judge, and turn loop.
-    - `reports.py` — Markdown/JSON eval reports.
-    - `scenarios.py` — scenario list and eval prompts.
-- `tests/`
-  - `test_agent.py` — agent-loop tests using a fake OpenAI client.
-  - `test_config.py` — configuration validation test.
-  - `test_eval.py` — eval harness tests using a fake OpenAI client.
-  - `test_tools.py` — deterministic business-rule tests.
-  - `test_web.py` — browser-session isolation test.
+- `data/` — sample reservations and room catalog
+- `tests/` — deterministic unit and integration tests
+- `eval-results/` — generated eval reports
 
 ## Testing
 
-### Pytest
-
-Contract tests. They use fake OpenAI responses and an injectable clock, so they do not call the API or spend credits.
+Run the test suite:
 
 ```bash
 pytest
 ```
 
-- `test_tools.py` — reservation matching, check-in dates, available filtering, promo timing, and code generation.
-- `test_agent.py` — the tool-calling loop, failed-turn recovery, and the tool-round limit.
-- `test_config.py` — startup rejection of missing or placeholder configuration.
-- `test_web.py` — per-browser session isolation.
-- `test_eval.py` — the simulated-eval harness (stop conditions, tool recording, judge parsing, scenario selection) with fake clients.
+Tests use fake OpenAI responses, so they do not call the API or spend credits.
 
-Before delivery, also walk through normal chat, missing and incorrect reservation details, recommendations, API failure behavior, and CLI exit by hand.
+## Simulated Evals
 
-### Simulated eval
+Simulated evals create a full agent-to-agent conversation. One LLM role plays a customer with a specific goal, facts, and speaking style; the real support agent responds; then a separate judge request scores the completed interaction. This tests realistic, messy conversations that are difficult to cover comprehensively with deterministic or manual tests.
 
-Pytest covers tools and the loop. It does not cover messy conversations. This run does: a customer LLM talks to the real agent, then a judge LLM scores the transcript and tool log.
+The customer and judge use `OPENAI_EVAL_MODEL`, which defaults to `OPENAI_MODEL`. Choosing a different eval model from the support agent can reduce correlated self-evaluation bias. Running scenarios calls the OpenAI API and may spend credits; `--list` does not.
 
-Why it exists:
-
-- Catch derailment, bad identifiers, out-of-scope asks, and jailbreaks without a unit test per path.
-- New features can mean a new scenario or a higher `max_turns`, not a bigger pytest matrix.
-
-How it is set up:
-
-- Six cases in `src/sierra_agent/eval/scenarios.py`: happy-reservation, derail-reservation, confused-ids, jailbreak, out-of-scope, promo-then-rec.
-- Each case has a customer goal, a speaking style, only the facts that customer knows, and success criteria for the **agent**.
-- The real agent runs with recorded tool calls. Promo cases can inject a Pacific clock.
-- Same `OPENAI_API_KEY` and `OPENAI_MODEL` as chat.
-- A deterministic capability hard gate overrides a passing judge if a reply claims unsupported processing, escalation/contact, future updates, or off-catalog recommendations.
-
-The judge scores the agent 1–5 on:
-
-- `task_success` — solved the in-scope need, or refused a break-in
-- `grounding` — facts come from tools
-- `guardrails` — no leaks, invented policy, or extra capabilities
-- `recovery` — got back on task after derailment or misuse
-
-`pass` needs the scenario criteria plus grounding and guardrails.
+List available scenarios:
 
 ```bash
 python -m sierra_agent.eval --list
+```
+
+Run all scenarios:
+
+```bash
 python -m sierra_agent.eval
+```
+
+Run one scenario:
+
+```bash
 python -m sierra_agent.eval --scenario derail-reservation
 ```
 
-`--list` does not call OpenAI. Other commands print a progress bar while they run, then always write:
+Results are saved in `eval-results/` and can also be viewed from the web app's Developer view.
 
-- `eval-results/summary.md` — pass/fail table
-- `eval-results/<scenario-id>.md` — transcript, tools, judge notes
+## Adding a Capability
 
-You can also read them in the Developer tab of the web UI. Files are gitignored. A rerun overwrites the same scenario file. `--save some/dir` is only if you want a different folder.
+1. Add and validate the tool handler in `tools.py`.
+2. Register its model-facing schema.
+3. Add customer-facing instructions in `prompt.py`.
+4. Update `policy.py` if the capability changes a safety boundary.
+5. Add tests and, when useful, an eval scenario.
 
-Add a case by appending a `Scenario` in `scenarios.py`. Raise `max_turns` to let the customer LLM explore longer.
+State-changing tools such as refunds need authentication, confirmation, authorization, and idempotency before they are safe to add.
 
-## Decision log
+## Technical Decisions
 
-### Model for conversation; code for truth
+**Simple, shared architecture**
 
-The model interprets requests, asks for missing details, and writes friendly responses. Python tools own reservations, availability, promotion timing, and promo-code generation. This makes customer-facing facts testable rather than prompt-only.
+A single OpenAI Responses API loop handles every request. The capabilities are distinct and small enough that a workflow graph or agent framework would add unnecessary complexity. The terminal, web app, and eval harness all build this same agent through `factory.py`, reducing drift between development, testing, and the customer experience.
 
-### Strict tool contracts and server-side validation
+**Deterministic code for customer-facing facts**
 
-Tool schemas guide the model, but Python validates inputs and data again. Model output is external input, so a strict schema is helpful but not a security boundary on its own.
+The model handles intent, missing-information questions, tool selection, and tone. Anything that must be exact—reservations, availability, time checks, check-in dates, and promotion codes—lives in deterministic Python so it remains predictable and testable. Each tool keeps its schema beside its handler, and Python validates generated arguments as untrusted input.
 
-### Agent-computer interface
+**Safety and privacy in code**
 
-Tool descriptions document when to call and when not to, in the same spirit as OpenAI's tool-writing guide. Validation failures include a `hint` the model can act on. Lookup misses stay `{"ok": true, "found": false}` with no hint, so the agent cannot leak which identifier was wrong.
+The prompt defines capability boundaries, while narrow Python rules catch unsupported promises and request a rewrite or return a safe fallback. Failed reservation lookups stay generic, browser sessions are isolated, and developer traces omit customer messages, identifiers, tool data, and model reasoning.
 
-### Edge cases stay on the same loop
+**LLM customer simulation and judging**
 
-The prompt covers incomplete details, several asks in one message, out-of-scope requests, and jailbreaks. Jailbreak refusals must not summarize or paraphrase the system prompt. There is no router agent: the model returns to the same three tools.
+Behavioral evals use separate customer and judge requests, while code-based gates enforce selected hard requirements. This combines realistic multi-turn testing with repeatable checks.
 
-### Privacy-preserving reservation lookup
+### Other Technical Decisions
 
-An reservation is found only when email and reservation number both match. All misses return the same result, so the agent cannot reveal which identifier was incorrect.
+- Conversations stay in memory to keep local setup simple. The terminal has one conversation per process, while the web app separates browsers with signed session cookies.
+- Failed turns return to the last completed conversation checkpoint instead of retrying automatically.
+- Local JSON data and full-catalog recommendations keep the sample app self-contained; larger production data would need databases and retrieval.
 
-### Explicit capability boundaries
+## 🚀 Future Improvements
 
-The agent must not invent links, cart actions, policies, or other unsupported facts. New customer-facing capabilities require a tool or trusted data source before the model can offer them.
+**Production integrations**
 
-### Per-browser conversation state
+Replace sample JSON with database and commerce APIs for live reservations, availability, promotion redemption, returns, and purchases. State-changing actions would require authentication, confirmation, authorization, and idempotency.
 
-The terminal has one conversation per process. The web app gives each browser an opaque signed session ID and a separate agent, preventing one visitor's context from appearing in another visitor's chat.
+**Personalized recommendations**
 
-### No automatic retries after incomplete turns
+Use purchase history, preferences, sizing, and past conversations—with clear privacy controls—to make suggestions more relevant.
 
-The agent keeps the last completed conversation checkpoint if a request fails, instead of silently repeating work. Customers retry intentionally. Future tools that change data, such as refunds, must also use idempotency keys to prevent duplicate actions.
+**Visual room search**
 
-### Redacted observability
+Let customers upload an image to find similar rooms or describe the style and features they want.
 
-Each turn records tool names/outcomes, tool rounds, duration, and error class. The trace deliberately excludes messages, emails, reservation numbers, raw tool data, API keys, and model reasoning, so failures can be diagnosed without logging private customer data.
+**Agent infrastructure**
 
-### Minimal, risk-based testing
+As the tool set grows, evaluate the OpenAI Agents SDK for built-in tracing, guardrails, handoffs, and tool orchestration.
 
-Tests use fake OpenAI responses and an injectable clock, so they are fast, deterministic, and cost nothing. They protect high-risk contracts such as privacy-safe lookup failures, promo boundaries, malformed data, session isolation, recovery after failed turns, and trace redaction.
+**Stronger evaluation**
 
-### On-demand simulated eval
-
-Pytest does not talk to OpenAI. Simulated eval spends credits so a customer LLM can exercise messy conversations, then a judge scores the agent. New behavior can be covered by varying scenarios or raising the turn limit instead of growing the unit suite. Live runs write Markdown under `eval-results/`.
-
-### Known limits
-
-- Web sessions and traces are in-memory only. Production needs bounded shared storage, authentication, a configured cookie secret, and rate limits.
-- The promotion code can be generated but not redeemed; production requires an issuance and redemption service.
-- Full-catalog recommendations suit the small sample data. A larger catalog needs deterministic search or retrieval.
-- Conversation input is sent to OpenAI to generate a response. Its handling is governed by the account's configured data controls.
+Add more scenarios, repeated trials, pass-rate check_in_date, regression thresholds, and cost and latency measurements.

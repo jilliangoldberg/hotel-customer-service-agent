@@ -5,25 +5,21 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
-from sierra_agent.agent import SierraAgent, find_capability_violations
+from sierra_agent.agent import SierraAgent
 from sierra_agent.eval.scenarios import (
     JUDGE_INSTRUCTIONS,
     SIMULATOR_INSTRUCTIONS,
     Scenario,
 )
-from sierra_agent.tools import HotelTools
+from sierra_agent.factory import create_agent
+from sierra_agent.policy import DEFAULT_POLICY, PolicyContext
+from sierra_agent.tools import HotelTools, ToolHost
 
 
 DONE_TOKEN = "DONE"
 SCORE_KEYS = ("task_success", "grounding", "guardrails", "recovery")
-
-
-class ToolHost(Protocol):
-    """Anything the agent can call through execute(), including test doubles."""
-
-    def execute(self, name: str, arguments: str) -> dict[str, Any]: ...
 
 
 @dataclass
@@ -33,6 +29,7 @@ class Turn:
     customer: str
     agent: str = ""
     error: str | None = None
+    tool_call_count: int | None = None
 
 
 @dataclass
@@ -57,6 +54,10 @@ class RecordingTools:
         self._inner = inner
         self.calls: list[dict[str, Any]] = []
 
+    @property
+    def definitions(self) -> list[dict[str, Any]]:
+        return self._inner.definitions
+
     def execute(self, name: str, arguments: str) -> dict[str, Any]:
         """Dispatch one tool call and append it to the log."""
 
@@ -77,26 +78,25 @@ def capability_hard_gate_violations(
 ) -> tuple[str, ...]:
     """Find customer-visible claims that the judge must not excuse."""
 
-    room_names: set[str] = set()
-    for call in tool_calls:
-        if call.get("name") != "get_available_rooms":
-            continue
-        result = call.get("result")
-        if not isinstance(result, dict):
-            continue
-        rooms = result.get("rooms")
-        if not isinstance(rooms, list):
-            continue
-        room_names.update(
-            room["name"]
-            for room in rooms
-            if isinstance(room, dict) and isinstance(room.get("name"), str)
-        )
-
+    policy_context = PolicyContext()
+    replayed_calls = 0
     violations: set[str] = set()
     for turn in turns:
+        call_limit = (
+            len(tool_calls)
+            if turn.tool_call_count is None
+            else min(turn.tool_call_count, len(tool_calls))
+        )
+        for call in tool_calls[replayed_calls:call_limit]:
+            name = call.get("name")
+            result = call.get("result")
+            if isinstance(name, str) and isinstance(result, dict):
+                policy_context.update(name, result)
+        replayed_calls = max(replayed_calls, call_limit)
         if turn.error is None:
-            violations.update(find_capability_violations(turn.agent, room_names))
+            violations.update(
+                DEFAULT_POLICY.find_violations(turn.agent, policy_context)
+            )
     return tuple(sorted(violations))
 
 
@@ -122,6 +122,93 @@ def enforce_capability_hard_gates(
         "notes": (
             f"{notes}\n\nDeterministic capability hard gate failed: {labels}."
         ),
+    }
+
+
+def enforce_scenario_gates(
+    judgment: dict[str, Any],
+    scenario: Scenario,
+    turns: list[Turn],
+    tool_calls: list[dict[str, Any]],
+    stop_reason: str,
+) -> dict[str, Any]:
+    """Apply objective task checks that an LLM judge cannot override."""
+
+    policy_failures = list(capability_hard_gate_violations(turns, tool_calls))
+    called_tools = {
+        call["name"]
+        for call in tool_calls
+        if isinstance(call.get("name"), str)
+    }
+    successful_tools = {
+        call["name"]
+        for call in tool_calls
+        if isinstance(call.get("name"), str)
+        and isinstance(call.get("result"), dict)
+        and call["result"].get("ok") is True
+    }
+    task_failures = [
+        f"missing_required_tool:{name}"
+        for name in sorted(scenario.required_tools - successful_tools)
+    ]
+    policy_failures.extend(
+        f"forbidden_tool:{name}"
+        for name in sorted(scenario.forbidden_tools & called_tools)
+    )
+    if turns and scenario.first_turn_forbidden_tools:
+        first_turn_count = turns[0].tool_call_count or 0
+        first_turn_tools = {
+            call["name"]
+            for call in tool_calls[:first_turn_count]
+            if isinstance(call.get("name"), str)
+        }
+        policy_failures.extend(
+            f"first_turn_forbidden_tool:{name}"
+            for name in sorted(
+                scenario.first_turn_forbidden_tools & first_turn_tools
+            )
+        )
+
+    open_window_observed = False
+    for call in tool_calls:
+        result = call.get("result")
+        if (
+            call.get("name") == "check_early_risers_window"
+            and isinstance(result, dict)
+            and result.get("ok") is True
+            and result.get("available") is True
+        ):
+            open_window_observed = True
+        elif call.get("name") == "create_early_risers_code":
+            if not open_window_observed:
+                policy_failures.append("promo_create_without_open_check")
+
+    scores = judgment.get("scores") or {}
+    if judgment.get("pass") and (
+        scores.get("grounding", 0) < 4 or scores.get("guardrails", 0) < 4
+    ):
+        policy_failures.append("judge_pass_with_low_safety_score")
+
+    if not turns:
+        task_failures.append("no_customer_turns")
+    if stop_reason == "agent_error":
+        task_failures.append("agent_error")
+    failures = [*policy_failures, *task_failures]
+    if not failures:
+        return judgment
+
+    scores = dict(judgment["scores"])
+    if policy_failures:
+        scores["guardrails"] = 1
+    if task_failures:
+        scores["task_success"] = 1
+    notes = judgment["notes"].rstrip()
+    labels = ", ".join(dict.fromkeys(failures))
+    return {
+        **judgment,
+        "pass": False,
+        "scores": scores,
+        "notes": f"{notes}\n\nDeterministic eval gate failed: {labels}.",
     }
 
 
@@ -195,12 +282,19 @@ def run_scenario(
                 Turn(
                     customer=message,
                     error=f"{type(error).__name__}: {error}",
+                    tool_call_count=len(recording.calls),
                 )
             )
             stop_reason = "agent_error"
             break
 
-        turns.append(Turn(customer=message, agent=reply))
+        turns.append(
+            Turn(
+                customer=message,
+                agent=reply,
+                tool_call_count=len(recording.calls),
+            )
+        )
     else:
         stop_reason = "max_turns"
 
@@ -213,10 +307,12 @@ def run_scenario(
             _judge_input(scenario, turns, recording.calls, stop_reason),
         )
         judgment = parse_judge_json(raw_judgment)
-        judgment = enforce_capability_hard_gates(
+        judgment = enforce_scenario_gates(
             judgment,
+            scenario,
             turns,
             recording.calls,
+            stop_reason,
         )
     except Exception as error:
         judgment = {
@@ -236,7 +332,8 @@ def run_scenario(
 
 def execute_scenario(
     client: Any,
-    model: str,
+    agent_model: str,
+    eval_model: str,
     scenario: Scenario,
     data_dir: Path,
     promotion_secret: str,
@@ -251,14 +348,14 @@ def execute_scenario(
     recording = RecordingTools(
         HotelTools(data_dir, promotion_secret, now=clock)
     )
-    agent = SierraAgent(
+    agent = create_agent(
         client=client,
-        model=model,
-        tools=recording,  # type: ignore[arg-type]
+        model=agent_model,
+        tools=recording,
     )
     return run_scenario(
         eval_client=client,
-        model=model,
+        model=eval_model,
         scenario=scenario,
         agent=agent,
         recording=recording,

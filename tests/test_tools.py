@@ -62,6 +62,12 @@ def make_tools(
     return HotelTools(tmp_path, "a-test-secret-value", now=now)
 
 
+def open_window_token(tools: HotelTools) -> str:
+    result = tools.check_early_risers_window()
+    assert result["available"] is True
+    return str(result["window_token"])
+
+
 def test_reservation_lookup_normalizes_both_identifiers(tmp_path: Path) -> None:
     tools = make_tools(tmp_path)
 
@@ -117,6 +123,41 @@ def test_available_rooms_exclude_zero_availability(tmp_path: Path) -> None:
     assert [room["room_type_id"] for room in result["rooms"]] == ["ROOM1"]
 
 
+@pytest.mark.parametrize(
+    ("hour", "minute", "available"),
+    [
+        (7, 30, False),
+        (9, 0, True),
+    ],
+)
+def test_promotion_window_can_be_checked_without_email(
+    tmp_path: Path,
+    hour: int,
+    minute: int,
+    available: bool,
+) -> None:
+    current_time = datetime(2026, 8, 27, hour, minute, tzinfo=PACIFIC_TIME)
+    tools = make_tools(tmp_path, current_time)
+
+    result = tools.check_early_risers_window()
+
+    assert result["ok"] is True
+    assert result["available"] is available
+    assert result["timezone"] == "Pacific Time"
+
+
+def test_tool_registry_has_unique_matching_schemas_and_handlers(
+    tmp_path: Path,
+) -> None:
+    tools = make_tools(tmp_path)
+    names = [spec.name for spec in tools.specs]
+
+    assert len(names) == len(set(names))
+    assert [definition["name"] for definition in tools.definitions] == names
+    assert all(callable(spec.handler) for spec in tools.specs)
+    assert all(spec.definition["strict"] is True for spec in tools.specs)
+
+
 def test_rejects_malformed_catalog_at_startup(tmp_path: Path) -> None:
     malformed_rooms = [{**PRODUCTS[0], "AvailableRooms": "2"}]
     (tmp_path / "guest_reservations.json").write_text(
@@ -129,6 +170,21 @@ def test_rejects_malformed_catalog_at_startup(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="invalid AvailableRooms"):
+        HotelTools(tmp_path, "a-test-secret-value")
+
+
+def test_rejects_reservation_with_unknown_catalog_room_type_id(tmp_path: Path) -> None:
+    reservations = [{**ORDERS[0], "RoomsReserved": ["MISSING"]}]
+    (tmp_path / "guest_reservations.json").write_text(
+        json.dumps(reservations),
+        encoding="utf-8",
+    )
+    (tmp_path / "room_catalog.json").write_text(
+        json.dumps(PRODUCTS),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unknown room RoomTypeID"):
         HotelTools(tmp_path, "a-test-secret-value")
 
 
@@ -150,7 +206,9 @@ def test_promotion_uses_exact_pacific_time_boundaries(
     current_time = datetime(2026, 8, 27, hour, minute, tzinfo=PACIFIC_TIME)
     tools = make_tools(tmp_path, current_time)
 
-    result = tools.create_early_risers_code("hiker@example.com")
+    window = tools.check_early_risers_window()
+    token = str(window.get("window_token", "closed"))
+    result = tools.create_early_risers_code("hiker@example.com", token)
 
     assert result["eligible"] is eligible
     assert ("code" in result) is eligible
@@ -161,10 +219,11 @@ def test_promotion_code_is_stable_for_normalized_email_and_date(
 ) -> None:
     current_time = datetime(2026, 8, 27, 9, 0, tzinfo=PACIFIC_TIME)
     tools = make_tools(tmp_path, current_time)
+    token = open_window_token(tools)
 
-    first = tools.create_early_risers_code("HIKER@example.com")
-    repeated = tools.create_early_risers_code(" hiker@example.com ")
-    other_user = tools.create_early_risers_code("climber@example.com")
+    first = tools.create_early_risers_code("HIKER@example.com", token)
+    repeated = tools.create_early_risers_code(" hiker@example.com ", token)
+    other_user = tools.create_early_risers_code("climber@example.com", token)
 
     assert first["code"] == repeated["code"]
     assert first["code"] != other_user["code"]
@@ -174,12 +233,29 @@ def test_promotion_code_is_stable_for_normalized_email_and_date(
 def test_invalid_email_never_creates_a_code(tmp_path: Path) -> None:
     current_time = datetime(2026, 8, 27, 9, 0, tzinfo=PACIFIC_TIME)
     tools = make_tools(tmp_path, current_time)
+    token = open_window_token(tools)
 
-    result = tools.create_early_risers_code("not-an-email")
+    result = tools.create_early_risers_code("not-an-email", token)
 
     assert result["ok"] is False
     assert result["error"] == "invalid_email"
     assert "email" in result["hint"].lower()
+    assert "code" not in result
+
+
+def test_promotion_code_requires_token_from_prior_window_check(
+    tmp_path: Path,
+) -> None:
+    current_time = datetime(2026, 8, 27, 9, 0, tzinfo=PACIFIC_TIME)
+    tools = make_tools(tmp_path, current_time)
+
+    result = tools.create_early_risers_code(
+        "hiker@example.com",
+        "not-a-window-token",
+    )
+
+    assert result["ok"] is False
+    assert result["error"] == "promotion_window_not_checked"
     assert "code" not in result
 
 

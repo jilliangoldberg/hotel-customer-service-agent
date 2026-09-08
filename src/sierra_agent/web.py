@@ -7,12 +7,12 @@ from threading import Lock
 from flask import Flask, jsonify, render_template, request, session
 from openai import OpenAI, OpenAIError
 
-from sierra_agent.__main__ import build_agent
 from sierra_agent.agent import AgentLoopError, SierraAgent
 from sierra_agent.config import PROJECT_ROOT, ConfigurationError, Settings
 from sierra_agent.eval.harness import execute_scenario
 from sierra_agent.eval.reports import load_result, scenario_listing, serialize_run, write_reports
 from sierra_agent.eval.scenarios import SCENARIOS, select_scenarios
+from sierra_agent.factory import build_agent
 from sierra_agent.tools import DataError
 
 app = Flask(__name__)
@@ -155,6 +155,7 @@ def eval_run():
             run = execute_scenario(
                 client,
                 settings.openai_model,
+                settings.openai_eval_model,
                 scenarios[0],
                 settings.data_dir,
                 settings.promotion_secret,

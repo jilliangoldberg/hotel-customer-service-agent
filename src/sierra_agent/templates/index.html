@@ -381,7 +381,7 @@
       document.getElementById("new-trail").addEventListener("click", async () => {
         await fetch("/reset", { method: "POST" });
         log.innerHTML = "";
-        addMsg(log, "agent", "Fresh trail! What can I help with?");
+        addMsg(log, "agent", "Welcome to Trailhead Hotel! Ask me about a reservation, rooms, or the Early Risers promo. 🛎️");
         showTrace(null);
         input.focus();
       });

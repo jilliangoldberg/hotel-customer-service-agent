@@ -2,23 +2,12 @@
 
 import sys
 
-from openai import OpenAI, OpenAIError
+from openai import OpenAIError
 
-from sierra_agent.agent import AgentLoopError, SierraAgent
-from sierra_agent.config import ConfigurationError, Settings
-from sierra_agent.tools import DataError, HotelTools
-
-
-def build_agent() -> SierraAgent:
-    """Construct the agent and its local dependencies."""
-
-    settings = Settings.from_env()
-    client = OpenAI(api_key=settings.openai_api_key)
-    tools = HotelTools(
-        data_dir=settings.data_dir,
-        promotion_secret=settings.promotion_secret,
-    )
-    return SierraAgent(client=client, model=settings.openai_model, tools=tools)
+from sierra_agent.agent import AgentLoopError
+from sierra_agent.config import ConfigurationError
+from sierra_agent.factory import build_agent
+from sierra_agent.tools import DataError
 
 
 def main() -> int:

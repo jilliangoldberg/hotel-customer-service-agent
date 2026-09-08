@@ -17,6 +17,8 @@ def tool_outcome(result: object) -> str:
         return "rejected"
     if "found" in result:
         return "found" if result["found"] else "not_found"
+    if "available" in result:
+        return "open" if result["available"] else "closed"
     if "eligible" in result:
         return "eligible" if result["eligible"] else "not_eligible"
     return "completed"
@@ -98,11 +100,11 @@ def format_report(run: EvalRun) -> str:
     return "\n".join(lines).rstrip()
 
 
-def format_summary_markdown(runs: list[EvalRun]) -> str:
-    """Index table linking to each scenario report."""
+def _format_summary_records(records: list[dict[str, Any]]) -> str:
+    """Build a summary from serialized runs."""
 
-    passed = sum(1 for run in runs if run.judgment.get("pass"))
-    failed = len(runs) - passed
+    passed = sum(1 for record in records if record.get("pass"))
+    failed = len(records) - passed
     lines = [
         "# Eval summary",
         "",
@@ -111,18 +113,51 @@ def format_summary_markdown(runs: list[EvalRun]) -> str:
         "| Scenario | Result | task | grounding | guardrails | recovery |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
-    for run in runs:
-        scores = run.judgment.get("scores") or {}
-        verdict = "PASS" if run.judgment.get("pass") else "FAIL"
+    for record in records:
+        scenario_id = str(record.get("scenario_id", "")).strip()
+        if not scenario_id:
+            continue
+        scores = record.get("scores") or {}
+        verdict = "PASS" if record.get("pass") else "FAIL"
         cells = " | ".join(str(scores.get(key, "-")) for key in SCORE_KEYS)
         lines.append(
-            f"| [{run.scenario.id}]({run.scenario.id}.md) | {verdict} | {cells} |"
+            f"| [{scenario_id}]({scenario_id}.md) | {verdict} | {cells} |"
         )
     return "\n".join(lines)
 
 
+def format_summary_markdown(runs: list[EvalRun]) -> str:
+    """Index table linking to each scenario report."""
+
+    records = sorted(
+        (serialize_run(run) for run in runs),
+        key=lambda record: str(record["scenario_id"]),
+    )
+    return _format_summary_records(records)
+
+
+def rebuild_summary(directory: Path) -> Path:
+    """Rebuild the summary from every valid saved JSON report."""
+
+    records: list[dict[str, Any]] = []
+    for json_path in sorted(directory.glob("*.json")):
+        try:
+            payload = json.loads(json_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict) and isinstance(payload.get("scenario_id"), str):
+            records.append(payload)
+
+    summary_path = directory / "summary.md"
+    summary_path.write_text(
+        _format_summary_records(records) + "\n",
+        encoding="utf-8",
+    )
+    return summary_path
+
+
 def write_reports(runs: list[EvalRun], directory: Path) -> list[Path]:
-    """Write Markdown, JSON, and a summary index for the given runs."""
+    """Write runs and rebuild an index of every saved JSON report."""
 
     directory.mkdir(parents=True, exist_ok=True)
     written: list[Path] = []
@@ -135,8 +170,7 @@ def write_reports(runs: list[EvalRun], directory: Path) -> list[Path]:
             encoding="utf-8",
         )
         written.extend([markdown_path, json_path])
-    summary_path = directory / "summary.md"
-    summary_path.write_text(format_summary_markdown(runs) + "\n", encoding="utf-8")
+    summary_path = rebuild_summary(directory)
     written.append(summary_path)
     return written
 

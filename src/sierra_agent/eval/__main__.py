@@ -21,7 +21,8 @@ def main(argv: list[str] | None = None) -> int:
         description=(
             "Run simulated-customer conversations against the Sierra agent "
             "and score them with a judge model. Uses OPENAI_API_KEY and "
-            "OPENAI_MODEL. This is not pytest and is not free."
+            "OPENAI_MODEL; OPENAI_EVAL_MODEL is optional. This is not pytest "
+            "and is not free."
         ),
     )
     parser.add_argument(
@@ -69,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
             run = execute_scenario(
                 client,
                 settings.openai_model,
+                settings.openai_eval_model,
                 scenario,
                 settings.data_dir,
                 settings.promotion_secret,

@@ -20,6 +20,7 @@ class Settings:
 
     openai_api_key: str
     openai_model: str
+    openai_eval_model: str
     promotion_secret: str
     data_dir: Path
 
@@ -30,11 +31,14 @@ class Settings:
         load_dotenv(PROJECT_ROOT / ".env")
 
         api_key = os.getenv("OPENAI_API_KEY", "").strip()
-        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
+        model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini").strip()
+        eval_model = os.getenv("OPENAI_EVAL_MODEL", "").strip() or model
         promotion_secret = os.getenv("PROMOTION_SECRET", "").strip()
 
         if not api_key or api_key == "your-api-key":
             raise ConfigurationError("Set OPENAI_API_KEY in .env.")
+        if not model:
+            raise ConfigurationError("Set OPENAI_MODEL in .env.")
         if len(promotion_secret) < 16:
             raise ConfigurationError(
                 "Set PROMOTION_SECRET in .env to a random value of at least 16 characters."
@@ -43,6 +47,7 @@ class Settings:
         return cls(
             openai_api_key=api_key,
             openai_model=model,
+            openai_eval_model=eval_model,
             promotion_secret=promotion_secret,
             data_dir=PROJECT_ROOT / "data",
         )
