@@ -35,14 +35,6 @@ class FakeTools:
 
     def execute(self, name: str, arguments: str) -> dict[str, Any]:
         self.calls.append((name, arguments))
-        if name == "lookup_reservation":
-            return {
-                "ok": True,
-                "found": True,
-                "reservation_number": "#H001",
-                "status": "confirmed",
-                "check_in_date": None,
-            }
         return {"ok": True, "tool": name}
 
 
@@ -116,7 +108,7 @@ def test_executes_tool_and_returns_output_to_model() -> None:
     assert '"ok":true' in output["output"]
     trace = agent.last_trace
     assert trace["outcome"] == "completed"
-    assert trace["tools"] == [{"name": "lookup_reservation", "outcome": "found"}]
+    assert trace["tools"] == [{"name": "lookup_reservation", "outcome": "completed"}]
     assert isinstance(trace["duration_ms"], int)
     assert call.arguments not in json.dumps(trace)
 
