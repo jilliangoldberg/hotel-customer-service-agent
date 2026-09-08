@@ -5,15 +5,20 @@ from secrets import token_urlsafe
 from threading import Lock
 
 from flask import Flask, jsonify, render_template, request, session
-from openai import OpenAIError
+from openai import OpenAI, OpenAIError
 
 from sierra_agent.__main__ import build_agent
 from sierra_agent.agent import AgentLoopError, SierraAgent
-from sierra_agent.config import ConfigurationError
+from sierra_agent.config import PROJECT_ROOT, ConfigurationError, Settings
+from sierra_agent.eval.harness import execute_scenario
+from sierra_agent.eval.reports import load_result, scenario_listing, serialize_run, write_reports
+from sierra_agent.eval.scenarios import SCENARIOS, select_scenarios
 from sierra_agent.tools import DataError
 
 app = Flask(__name__)
 app.secret_key = token_urlsafe(32)
+
+EVAL_RESULTS_DIR = PROJECT_ROOT / "eval-results"
 
 
 @dataclass
@@ -26,6 +31,7 @@ class ChatSession:
 
 _sessions: dict[str, ChatSession] = {}
 _sessions_lock = Lock()
+_eval_lock = Lock()
 
 
 def _session_id() -> str:
@@ -108,6 +114,58 @@ def reset():
     with _sessions_lock:
         _sessions[_session_id()] = ChatSession(agent=new_agent)
     return jsonify({"ok": True})
+
+
+@app.get("/eval/scenarios")
+def eval_scenarios():
+    """List eval cases and any saved pass/fail marks."""
+
+    return jsonify({"scenarios": scenario_listing(SCENARIOS, EVAL_RESULTS_DIR)})
+
+
+@app.get("/eval/results/<scenario_id>")
+def eval_result(scenario_id: str):
+    """Return one saved transcript and score, if present."""
+
+    try:
+        select_scenarios(scenario_id)
+    except ValueError:
+        return jsonify({"error": "unknown scenario"}), 404
+    saved = load_result(EVAL_RESULTS_DIR, scenario_id)
+    if saved is None:
+        return jsonify({"error": "no saved result"}), 404
+    return jsonify(saved)
+
+
+@app.post("/eval/run")
+def eval_run():
+    """Run one simulated-eval scenario, save it, and return the result."""
+
+    payload = request.get_json(silent=True) or {}
+    scenario_id = str(payload.get("scenario", "")).strip()
+    try:
+        scenarios = select_scenarios(scenario_id)
+    except ValueError:
+        return jsonify({"error": "unknown scenario"}), 404
+
+    try:
+        settings = Settings.from_env()
+        client = OpenAI(api_key=settings.openai_api_key)
+        with _eval_lock:
+            run = execute_scenario(
+                client,
+                settings.openai_model,
+                scenarios[0],
+                settings.data_dir,
+                settings.promotion_secret,
+            )
+            write_reports([run], EVAL_RESULTS_DIR)
+    except ConfigurationError:
+        return _setup_error()
+    except (OpenAIError, DataError, ValueError):
+        return jsonify({"error": "eval failed"}), 502
+
+    return jsonify(serialize_run(run))
 
 
 def main() -> None:

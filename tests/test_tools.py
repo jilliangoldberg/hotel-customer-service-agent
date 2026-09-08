@@ -177,18 +177,27 @@ def test_invalid_email_never_creates_a_code(tmp_path: Path) -> None:
 
     result = tools.create_early_risers_code("not-an-email")
 
-    assert result == {"ok": False, "error": "invalid_email"}
+    assert result["ok"] is False
+    assert result["error"] == "invalid_email"
+    assert "email" in result["hint"].lower()
+    assert "code" not in result
 
 
 def test_dispatch_rejects_unknown_or_malformed_calls(tmp_path: Path) -> None:
     tools = make_tools(tmp_path)
 
-    assert tools.execute("missing_tool", "{}")["error"] == "unknown_tool"
-    assert tools.execute("lookup_reservation", "not-json")["error"] == (
-        "invalid_tool_arguments"
-    )
+    unknown = tools.execute("missing_tool", "{}")
+    assert unknown["error"] == "unknown_tool"
+    assert "lookup_reservation" in unknown["hint"]
+
+    malformed = tools.execute("lookup_reservation", "not-json")
+    assert malformed["error"] == "invalid_tool_arguments"
+    assert "required fields" in malformed["hint"]
+
     invalid_types = tools.execute(
         "lookup_reservation",
         '{"email":["not","a","string"],"reservation_number":1}',
     )
     assert invalid_types["error"] == "invalid_reservation_details"
+    assert "hint" in invalid_types
+    assert "found" not in invalid_types

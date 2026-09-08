@@ -6,7 +6,12 @@ from typing import Any
 
 import pytest
 
-from sierra_agent.agent import AgentLoopError, SierraAgent
+from sierra_agent.agent import (
+    SAFE_CAPABILITY_FALLBACK,
+    AgentLoopError,
+    SierraAgent,
+    find_capability_violations,
+)
 
 
 class FakeResponses:
@@ -147,3 +152,45 @@ def test_failed_tool_loop_keeps_last_successful_session_checkpoint() -> None:
     assert agent.last_trace["error"] == "AgentLoopError"
     assert agent.reply("Retry my request") == "Let's try that again."
     assert client.responses.requests[-1]["previous_response_id"] == "response-1"
+
+
+def test_rewrites_an_unsupported_capability_promise() -> None:
+    unsafe = "I'll escalate this to a manager and keep you updated."
+    corrected = "I can check a reservation’s status or help with available rooms."
+    agent, client, _ = make_agent(
+        [
+            text_response("response-1", unsafe),
+            text_response("response-2", corrected),
+        ]
+    )
+
+    assert agent.reply("Please escalate my refund.") == corrected
+    rewrite_request = client.responses.requests[1]
+    assert rewrite_request["previous_response_id"] == "response-1"
+    assert rewrite_request["tool_choice"] == "none"
+    assert "Remove all promises" in rewrite_request["instructions"]
+    assert agent.last_trace["response_policy"] == "rewritten"
+    assert unsafe not in json.dumps(agent.last_trace)
+
+
+def test_returns_safe_fallback_when_rewrite_remains_unsafe() -> None:
+    agent, _, _ = make_agent(
+        [
+            text_response("response-1", "I will process your refund."),
+            text_response("response-2", "I've contacted a manager for you."),
+        ]
+    )
+
+    assert agent.reply("Refund my reservation.") == SAFE_CAPABILITY_FALLBACK
+    assert agent.last_trace["response_policy"] == "fallback"
+
+
+def test_flags_off_catalog_recommendations() -> None:
+    assert find_capability_violations(
+        "I recommend Marriott for your hike.",
+        {"Garden King Room"},
+    ) == ("off_catalog_recommendation",)
+    assert find_capability_violations(
+        "I recommend Garden King Room for your hike.",
+        {"Garden King Room"},
+    ) == ()

@@ -20,6 +20,7 @@ dev = ["pytest"]
 [project.scripts]
 sierra-agent = "sierra_agent.__main__:main"
 sierra-agent-web = "sierra_agent.web:main"
+sierra-agent-eval = "sierra_agent.eval.__main__:main"
 
 [tool.setuptools.package-data]
 sierra_agent = ["templates/*"]

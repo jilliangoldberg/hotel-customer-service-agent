@@ -21,9 +21,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "name": "lookup_reservation",
         "description": (
-            "Look up one reservation after the customer has supplied both their email "
-            "address and reservation number. Spacing, capitalization, a missing #, and "
-            "extra symbols are normalized automatically."
+            "Look up one reservation after the customer has given both their email "
+            "and reservation number. Call only when both values are present. Pass "
+            "them as typed; spacing, capitalization, a missing #, and extra "
+            "symbols are normalized in Python. Do not call with only one field. "
+            "A miss does not say which identifier was wrong."
         ),
         "parameters": {
             "type": "object",
@@ -46,8 +48,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "name": "get_available_rooms",
         "description": (
-            "Return the complete available Trailhead Hotel room catalog for "
-            "grounded room recommendations."
+            "Return every available catalog item. Call before recommending "
+            "rooms. Recommend only items and details in this result. Do not "
+            "invent rooms, prices, or availability. The full available list "
+            "is returned because the sample catalog is small."
         ),
         "parameters": {
             "type": "object",
@@ -61,8 +65,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "name": "create_early_risers_code",
         "description": (
-            "Check the current Pacific time and, when eligible, create today's "
-            "Early Risers Promotion code for the supplied email."
+            "Create today's Early Risers code for one email. Call only after "
+            "an explicit request for the code and after the customer has given "
+            "an email. Do not call for an informational question about the "
+            "promotion. Python checks Pacific Time (8:00 AM inclusive to "
+            "10:00 AM exclusive) and builds the code."
         ),
         "parameters": {
             "type": "object",
@@ -78,6 +85,12 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "strict": True,
     },
 ]
+
+
+def _reject(error: str, hint: str) -> dict[str, Any]:
+    """Return a failed tool result the model can act on."""
+
+    return {"ok": False, "error": error, "hint": hint}
 
 
 class DataError(ValueError):
@@ -235,7 +248,11 @@ class HotelTools:
         normalized_email = self._normalize_email(email)
         normalized_reservation = self._normalize_reservation_number(reservation_number)
         if normalized_email is None or normalized_reservation is None:
-            return {"ok": False, "error": "invalid_reservation_details"}
+            return _reject(
+                "invalid_reservation_details",
+                "Ask for a complete email (name@domain.com) and the full reservation "
+                "number. Do not guess which field was wrong.",
+            )
 
         for reservation in self._reservations:
             saved_email = str(reservation["Email"]).strip().casefold()
@@ -289,7 +306,10 @@ class HotelTools:
 
         normalized_email = self._normalize_email(email)
         if normalized_email is None:
-            return {"ok": False, "error": "invalid_email"}
+            return _reject(
+                "invalid_email",
+                "Ask for a complete email address like name@domain.com.",
+            )
 
         current = self._now()
         if current.tzinfo is None:
@@ -325,9 +345,15 @@ class HotelTools:
         try:
             arguments = json.loads(arguments_json)
         except json.JSONDecodeError:
-            return {"ok": False, "error": "invalid_tool_arguments"}
+            return _reject(
+                "invalid_tool_arguments",
+                "Call the tool again with the required fields from the schema.",
+            )
         if not isinstance(arguments, dict):
-            return {"ok": False, "error": "invalid_tool_arguments"}
+            return _reject(
+                "invalid_tool_arguments",
+                "Call the tool again with the required fields from the schema.",
+            )
 
         handlers: dict[str, Callable[..., dict[str, Any]]] = {
             "lookup_reservation": self.lookup_reservation,
@@ -336,9 +362,16 @@ class HotelTools:
         }
         handler = handlers.get(name)
         if handler is None:
-            return {"ok": False, "error": "unknown_tool"}
+            return _reject(
+                "unknown_tool",
+                "Use only lookup_reservation, get_available_rooms, or "
+                "create_early_risers_code.",
+            )
 
         try:
             return handler(**arguments)
         except TypeError:
-            return {"ok": False, "error": "invalid_tool_arguments"}
+            return _reject(
+                "invalid_tool_arguments",
+                "Call the tool again with the required fields from the schema.",
+            )

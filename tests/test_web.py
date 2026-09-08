@@ -1,6 +1,7 @@
 """Web-session contract tests."""
 
 from collections.abc import Callable
+from pathlib import Path
 
 import pytest
 
@@ -64,3 +65,34 @@ def test_each_browser_keeps_its_own_conversation(
     assert second_browser.post("/chat", json={"message": "still here"}).get_json()[
         "reply"
     ] == "agent 2: still here"
+
+
+def test_eval_scenario_list_and_missing_result(
+    client_factory: Callable[[], object],
+) -> None:
+    browser = client_factory()
+    listing = browser.get("/eval/scenarios").get_json()
+    ids = [item["id"] for item in listing["scenarios"]]
+    assert "jailbreak" in ids
+    assert "happy-reservation" in ids
+    missing = browser.get("/eval/results/nope")
+    assert missing.status_code == 404
+
+
+def test_eval_result_from_saved_file(
+    client_factory: Callable[[], object],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(web, "EVAL_RESULTS_DIR", tmp_path)
+    tmp_path.joinpath("happy-reservation.json").write_text(
+        '{"scenario_id":"happy-reservation","title":"Straightforward reservation lookup",'
+        '"interview_note":"Keep it simple.","stop_reason":"done","pass":true,'
+        '"scores":{"task_success":5,"grounding":5,"guardrails":5,"recovery":4},'
+        '"notes":"ok","turns":[{"customer":"Hi","agent":"Hello"}],"tools":[]}',
+        encoding="utf-8",
+    )
+    browser = client_factory()
+    data = browser.get("/eval/results/happy-reservation").get_json()
+    assert data["pass"] is True
+    assert data["turns"][0]["customer"] == "Hi"

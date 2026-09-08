@@ -12,24 +12,37 @@
         --paper: #fffaf0;
         --trail: #c45c26;
         --ink: #243126;
+        --pass: #2f6f45;
+        --fail: #a33b1f;
       }
       * { box-sizing: border-box; }
-      body {
+      html, body {
         margin: 0;
         min-height: 100vh;
+        background: var(--canvas);
+      }
+      body {
         font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-        background: linear-gradient(#87b5c9 0 28%, #cfe3c4 28% 42%, var(--canvas) 42%);
         color: var(--ink);
       }
+      .sky {
+        background-color: #cfe3c4;
+        background-image: linear-gradient(#87b5c9, #9ebfbc);
+        background-repeat: no-repeat;
+        background-size: 100% calc(100% - 20px);
+        padding: 24px 16px 32px;
+      }
+      .sky header,
       main {
         max-width: 640px;
         margin: 0 auto;
-        padding: 24px 16px 32px;
       }
+      body.is-developer .sky header,
+      main.is-developer { max-width: 760px; }
+      main { padding: 16px 16px 32px; }
       header {
         text-align: center;
         color: var(--pine);
-        margin-bottom: 16px;
       }
       header h1 {
         margin: 0;
@@ -39,7 +52,27 @@
         margin: 6px 0 0;
         font-style: italic;
       }
-      #log {
+      .mode-toggle {
+        display: inline-flex;
+        margin: 14px 0 0;
+        padding: 4px;
+        border: 2px solid var(--pine);
+        border-radius: 999px;
+        background: var(--paper);
+      }
+      .mode-toggle button {
+        border: 0;
+        background: transparent;
+        color: var(--pine);
+        padding: 8px 16px;
+        border-radius: 999px;
+      }
+      .mode-toggle button.is-active {
+        background: var(--pine);
+        color: white;
+      }
+      .panel[hidden] { display: none !important; }
+      #log, #eval-log {
         background: var(--paper);
         border: 3px solid var(--pine);
         border-radius: 18px;
@@ -61,21 +94,20 @@
         margin-left: auto;
         background: #f3d7b3;
       }
-      .agent {
-        background: #d7eadb;
-      }
+      .agent { background: #d7eadb; }
+      .error { background: #f3d0c4; }
       form {
         display: flex;
         gap: 8px;
         margin-top: 14px;
       }
-      input, button {
+      input, button, select {
         font: inherit;
         border-radius: 999px;
         border: 2px solid var(--pine);
         padding: 10px 14px;
       }
-      input { flex: 1; background: var(--paper); }
+      input, select { flex: 1; background: var(--paper); }
       button {
         background: var(--trail);
         color: white;
@@ -91,7 +123,7 @@
         margin-top: 16px;
         color: var(--pine);
       }
-      #trace pre {
+      #trace pre, #eval-judge {
         margin: 8px 0 0;
         padding: 10px;
         border-radius: 10px;
@@ -99,41 +131,141 @@
         font: 0.85rem/1.4 monospace;
         white-space: pre-wrap;
       }
+      #eval-judge { font-family: inherit; line-height: 1.45; }
+      #eval-judge:empty,
+      #eval-tools:empty,
+      #eval-meta:empty { display: none; }
+      .eval-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+      .eval-toolbar button.scenario {
+        background: var(--paper);
+        color: var(--pine);
+      }
+      .eval-toolbar button.scenario.is-active {
+        background: var(--pine);
+        color: white;
+      }
+      .badge {
+        display: inline-block;
+        margin-left: 6px;
+        padding: 1px 7px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        color: white;
+      }
+      .badge-pass { background: var(--pass); }
+      .badge-fail { background: var(--fail); }
+      #eval-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        align-items: center;
+        margin: 0 0 12px;
+        color: var(--pine);
+      }
+      #eval-meta strong { font-size: 1.05rem; }
+      .score-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+      .score-pills span {
+        background: var(--paper);
+        border: 2px solid var(--moss);
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 0.85rem;
+      }
+      #eval-tools {
+        margin: 10px 0 0;
+        color: var(--pine);
+        font-size: 0.9rem;
+      }
+      #run-eval { background: var(--pine); }
     </style>
   </head>
   <body>
-    <main>
+    <div class="sky">
       <header>
         <h1>🏨 Trailhead Hotel</h1>
-        <p>A welcoming stay starts here.</p>
+        <p id="tagline">A welcoming stay starts here.</p>
+        <div class="mode-toggle">
+          <button type="button" id="mode-customer" class="is-active">Customer</button>
+          <button type="button" id="mode-developer">Developer</button>
+        </div>
       </header>
-      <div id="log">
-        <div class="msg agent">Welcome to Trailhead Hotel! Ask me about a reservation, rooms, or the Early Risers promo. 🛎️</div>
-      </div>
-      <form id="chat-form">
-        <input id="message" type="text" autocomplete="off" placeholder="How can we help with your stay?" />
-        <button type="submit">Send 🛏️</button>
-      </form>
-      <button id="new-trail" type="button">Start a new chat</button>
-      <details id="trace" hidden>
-        <summary>Developer trace</summary>
-        <pre id="trace-text"></pre>
-      </details>
+    </div>
+    <main id="shell">
+      <section id="customer-view" class="panel">
+        <div id="log">
+          <div class="msg agent">Welcome to Trailhead Hotel! Ask me about a reservation, rooms, or the Early Risers promo. 🛎️</div>
+        </div>
+        <form id="chat-form">
+          <input id="message" type="text" autocomplete="off" placeholder="How can we help with your stay?" />
+          <button type="submit">Send 🛏️</button>
+        </form>
+        <button id="new-trail" type="button">Start a new chat</button>
+        <details id="trace" hidden>
+          <summary>Developer trace</summary>
+          <pre id="trace-text"></pre>
+        </details>
+      </section>
+
+      <section id="developer-view" class="panel" hidden>
+        <div class="eval-toolbar" id="scenario-list"></div>
+        <div id="eval-meta"></div>
+        <div id="eval-log">
+          <div class="msg agent">Pick a scenario to read a saved transcript, or run one. This uses the same OpenAI key as chat.</div>
+        </div>
+        <p id="eval-tools"></p>
+        <p id="eval-judge"></p>
+        <form class="eval-toolbar" id="eval-form">
+          <button id="run-eval" type="submit">Run scenario</button>
+        </form>
+      </section>
     </main>
     <script>
+      const shell = document.getElementById("shell");
+      const tagline = document.getElementById("tagline");
+      const customerView = document.getElementById("customer-view");
+      const developerView = document.getElementById("developer-view");
+      const modeCustomer = document.getElementById("mode-customer");
+      const modeDeveloper = document.getElementById("mode-developer");
       const log = document.getElementById("log");
       const form = document.getElementById("chat-form");
       const input = document.getElementById("message");
       const sendBtn = form.querySelector("button");
       const tracePanel = document.getElementById("trace");
       const traceText = document.getElementById("trace-text");
+      const scenarioList = document.getElementById("scenario-list");
+      const evalLog = document.getElementById("eval-log");
+      const evalMeta = document.getElementById("eval-meta");
+      const evalTools = document.getElementById("eval-tools");
+      const evalJudge = document.getElementById("eval-judge");
+      const runEval = document.getElementById("run-eval");
 
-      function addMsg(role, text) {
+      let selectedScenario = "";
+
+      function addMsg(target, role, text) {
         const div = document.createElement("div");
         div.className = "msg " + role;
         div.textContent = text;
-        log.appendChild(div);
-        log.scrollTop = log.scrollHeight;
+        target.appendChild(div);
+        target.scrollTop = target.scrollHeight;
+      }
+
+      function setMode(mode) {
+        const developer = mode === "developer";
+        document.body.classList.toggle("is-developer", developer);
+        shell.classList.toggle("is-developer", developer);
+        customerView.hidden = developer;
+        developerView.hidden = !developer;
+        modeCustomer.classList.toggle("is-active", !developer);
+        modeDeveloper.classList.toggle("is-active", developer);
+        tagline.textContent = developer
+          ? "Simulated eval — transcripts and scores"
+          : "A welcoming stay starts here.";
+        if (developer) loadScenarios();
       }
 
       function showTrace(trace) {
@@ -149,11 +281,84 @@
         ].filter(Boolean).join("\n");
       }
 
+      function renderResult(data) {
+        evalLog.innerHTML = "";
+        const verdict = data.pass ? "PASS" : "FAIL";
+        evalMeta.innerHTML = "";
+        const title = document.createElement("strong");
+        title.textContent = (data.scenario_id || selectedScenario) + ": " + (data.title || "");
+        const badge = document.createElement("span");
+        badge.className = "badge " + (data.pass ? "badge-pass" : "badge-fail");
+        badge.textContent = verdict;
+        evalMeta.append(title, badge);
+        const pills = document.createElement("div");
+        pills.className = "score-pills";
+        const scores = data.scores || {};
+        ["task_success", "grounding", "guardrails", "recovery"].forEach((key) => {
+          const pill = document.createElement("span");
+          pill.textContent = key.replace("_", " ") + " " + (scores[key] ?? "—");
+          pills.appendChild(pill);
+        });
+        evalMeta.appendChild(pills);
+        if (!data.turns || !data.turns.length) {
+          addMsg(evalLog, "agent", "No customer turns in this run.");
+        } else {
+          data.turns.forEach((turn) => {
+            addMsg(evalLog, "you", turn.customer);
+            if (turn.error) addMsg(evalLog, "error", turn.error);
+            else addMsg(evalLog, "agent", turn.agent);
+          });
+        }
+        const tools = data.tools || [];
+        evalTools.textContent = tools.length
+          ? "Tools: " + tools.map((tool) => tool.name + " → " + tool.outcome).join(", ")
+          : "Tools: none";
+        evalJudge.textContent = data.notes || "";
+      }
+
+      async function loadScenarios() {
+        const res = await fetch("/eval/scenarios");
+        const data = await res.json();
+        scenarioList.innerHTML = "";
+        (data.scenarios || []).forEach((scenario) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "scenario" + (scenario.id === selectedScenario ? " is-active" : "");
+          button.textContent = scenario.id;
+          if (typeof scenario.pass === "boolean") {
+            const badge = document.createElement("span");
+            badge.className = "badge " + (scenario.pass ? "badge-pass" : "badge-fail");
+            badge.textContent = scenario.pass ? "PASS" : "FAIL";
+            button.appendChild(badge);
+          }
+          button.addEventListener("click", () => selectScenario(scenario.id));
+          scenarioList.appendChild(button);
+        });
+      }
+
+      async function selectScenario(id) {
+        selectedScenario = id;
+        await loadScenarios();
+        const res = await fetch("/eval/results/" + encodeURIComponent(id));
+        if (res.status === 404) {
+          evalLog.innerHTML = "";
+          evalMeta.innerHTML = "<strong>" + id + "</strong>";
+          addMsg(evalLog, "agent", "No saved transcript yet. Run this scenario to generate one.");
+          evalTools.textContent = "";
+          evalJudge.textContent = "";
+          return;
+        }
+        renderResult(await res.json());
+      }
+
+      modeCustomer.addEventListener("click", () => setMode("customer"));
+      modeDeveloper.addEventListener("click", () => setMode("developer"));
+
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const text = input.value.trim();
         if (!text) return;
-        addMsg("you", text);
+        addMsg(log, "you", text);
         input.value = "";
         sendBtn.disabled = true;
         try {
@@ -163,10 +368,10 @@
             body: JSON.stringify({ message: text }),
           });
           const data = await res.json();
-          addMsg("agent", data.reply || "Hmm, that path went quiet. Try again?");
+          addMsg(log, "agent", data.reply || "Hmm, that path went quiet. Try again?");
           showTrace(data.trace);
         } catch {
-          addMsg("agent", "The guest desk connection failed. Please try again in a moment.");
+          addMsg(log, "agent", "The guest desk connection failed. Please try again in a moment.");
           showTrace(null);
         }
         sendBtn.disabled = false;
@@ -176,9 +381,42 @@
       document.getElementById("new-trail").addEventListener("click", async () => {
         await fetch("/reset", { method: "POST" });
         log.innerHTML = "";
-        addMsg("agent", "Fresh trail! What can I help with?");
+        addMsg(log, "agent", "Fresh trail! What can I help with?");
         showTrace(null);
         input.focus();
+      });
+
+      document.getElementById("eval-form").addEventListener("submit", async (event) => {
+        event.preventDefault();
+        if (!selectedScenario) {
+          evalLog.innerHTML = "";
+          addMsg(evalLog, "agent", "Choose a scenario first.");
+          return;
+        }
+        runEval.disabled = true;
+        runEval.textContent = "Running…";
+        evalLog.innerHTML = "";
+        addMsg(evalLog, "agent", "Running " + selectedScenario + ". This can take a minute.");
+        try {
+          const res = await fetch("/eval/run", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scenario: selectedScenario }),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            evalLog.innerHTML = "";
+            addMsg(evalLog, "error", data.error || "Eval failed.");
+          } else {
+            renderResult(data);
+            await loadScenarios();
+          }
+        } catch {
+          evalLog.innerHTML = "";
+          addMsg(evalLog, "error", "Could not reach the eval runner.");
+        }
+        runEval.disabled = false;
+        runEval.textContent = "Run scenario";
       });
     </script>
   </body>
