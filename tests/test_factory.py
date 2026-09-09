@@ -49,6 +49,4 @@ def test_build_agent_composes_configured_model_and_registered_tools(
     assert {tool["name"] for tool in request["tools"]} == {
         "lookup_reservation",
         "get_available_rooms",
-        "check_early_risers_window",
-        "create_early_risers_code",
     }

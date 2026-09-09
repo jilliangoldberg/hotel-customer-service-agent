@@ -21,6 +21,9 @@ class FakeAgent:
             "outcome": "completed",
             "tool_rounds": 0,
             "tools": [],
+            "early_risers_guard": "hidden",
+            "promotion_prompt_enabled": False,
+            "exposed_tools": ["lookup_reservation", "get_available_rooms"],
             "duration_ms": 1,
         }
 
@@ -72,12 +75,29 @@ def test_initial_and_reset_greetings_list_supported_options(
 ) -> None:
     browser = client_factory()
     page = browser.get("/").get_data(as_text=True)
-    greeting = (
-        "Welcome to Trailhead Hotel! Ask me about a reservation, rooms, or the Early "
-        "Risers promo. 🛎️"
-    )
+    greeting = "Welcome to Trailhead Hotel! Ask me about a reservation or rooms. 🛎️"
 
     assert page.count(greeting) == 2
+    assert "Ask me about a reservation, rooms, or the Early Risers promo." not in page
+
+
+def test_developer_trace_is_only_rendered_in_developer_view(
+    client_factory: Callable[[], object],
+) -> None:
+    page = client_factory().get("/").get_data(as_text=True)
+    customer_view = page.split('<section id="customer-view"', 1)[1].split(
+        "</section>",
+        1,
+    )[0]
+    developer_view = page.split('<section id="developer-view"', 1)[1].split(
+        "</section>",
+        1,
+    )[0]
+
+    assert 'id="trace"' not in customer_view
+    assert 'id="trace"' in developer_view
+    assert "Early Risers guard:" in page
+    assert "exposed tools:" in page
 
 
 def test_eval_scenario_list_and_missing_result(

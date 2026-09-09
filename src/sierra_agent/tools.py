@@ -16,6 +16,12 @@ PACIFIC_TIME = ZoneInfo("America/Los_Angeles")
 EARLY_RISERS_START = time(8, 0)
 EARLY_RISERS_END = time(10, 0)
 EMAIL_PATTERN = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+EARLY_RISERS_TOOL_NAMES = frozenset(
+    {
+        "check_early_risers_window",
+        "create_early_risers_code",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -37,6 +43,23 @@ class ToolHost(Protocol):
     def definitions(self) -> list[dict[str, Any]]: ...
 
     def execute(self, name: str, arguments: str) -> dict[str, Any]: ...
+
+
+def exposed_tool_definitions(
+    tools: ToolHost,
+    *,
+    include_early_risers: bool,
+) -> list[dict[str, Any]]:
+    """Return only the tool schemas relevant to the current conversation."""
+
+    return [
+        definition
+        for definition in tools.definitions
+        if (
+            include_early_risers
+            or definition.get("name") not in EARLY_RISERS_TOOL_NAMES
+        )
+    ]
 
 
 def _reject(error: str, hint: str) -> dict[str, Any]:

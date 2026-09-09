@@ -1,14 +1,18 @@
 """The minimal OpenAI Responses API and tool-calling loop."""
 
 import json
+import re
 from time import perf_counter
 from typing import Any
 
 from openai import OpenAI
 
 from sierra_agent.policy import CapabilityPolicy, DEFAULT_POLICY, PolicyContext
-from sierra_agent.prompt import SYSTEM_PROMPT
-from sierra_agent.tools import ToolHost
+from sierra_agent.prompt import system_prompt
+from sierra_agent.tools import ToolHost, exposed_tool_definitions
+
+
+_EARLY_RISERS_PATTERN = re.compile(r"\bearly[\s-]+risers?\b", re.IGNORECASE)
 
 
 class AgentLoopError(RuntimeError):
@@ -34,6 +38,7 @@ class SierraAgent:
         self._max_tool_rounds = max_tool_rounds
         self._previous_response_id: str | None = None
         self._policy_context = PolicyContext()
+        self._early_risers_mentioned = False
         self._last_trace: dict[str, Any] = {}
 
     @property
@@ -43,16 +48,34 @@ class SierraAgent:
         return {
             **self._last_trace,
             "tools": list(self._last_trace.get("tools", [])),
+            "exposed_tools": list(self._last_trace.get("exposed_tools", [])),
         }
 
     def reply(self, user_message: str) -> str:
         """Send one customer message and resolve any requested tool calls."""
 
+        if _EARLY_RISERS_PATTERN.search(user_message):
+            self._early_risers_mentioned = True
+
         previous_response_id = self._previous_response_id
         previous_policy_context = self._policy_context.copy()
         policy_context = previous_policy_context.copy()
         started_at = perf_counter()
-        trace: dict[str, Any] = {"tools": [], "tool_rounds": 0}
+        exposed_tools = exposed_tool_definitions(
+            self._tools,
+            include_early_risers=self._early_risers_mentioned,
+        )
+        trace: dict[str, Any] = {
+            "tools": [],
+            "tool_rounds": 0,
+            "early_risers_guard": (
+                "enabled" if self._early_risers_mentioned else "hidden"
+            ),
+            "promotion_prompt_enabled": self._early_risers_mentioned,
+            "exposed_tools": [
+                str(definition["name"]) for definition in exposed_tools
+            ],
+        }
         try:
             response = self._create_response(
                 input_items=user_message,
@@ -137,7 +160,10 @@ class SierraAgent:
                 "the correction instructions."
             ),
             previous_response_id=response.id,
-            instructions=f"{SYSTEM_PROMPT}\n\n{self._policy.rewrite_instructions}",
+            instructions=(
+                f"{system_prompt(include_early_risers=self._early_risers_mentioned)}"
+                f"\n\n{self._policy.rewrite_instructions}"
+            ),
             tool_choice="none",
         )
         corrected_text = corrected.output_text.strip()
@@ -176,14 +202,23 @@ class SierraAgent:
         self,
         input_items: str | list[dict[str, Any]],
         previous_response_id: str | None,
-        instructions: str = SYSTEM_PROMPT,
+        instructions: str | None = None,
         tool_choice: str | None = None,
     ) -> Any:
         request: dict[str, Any] = {
             "model": self._model,
-            "instructions": instructions,
+            "instructions": (
+                instructions
+                if instructions is not None
+                else system_prompt(
+                    include_early_risers=self._early_risers_mentioned,
+                )
+            ),
             "input": input_items,
-            "tools": self._tools.definitions,
+            "tools": exposed_tool_definitions(
+                self._tools,
+                include_early_risers=self._early_risers_mentioned,
+            ),
             "parallel_tool_calls": True,
         }
         if previous_response_id is not None:

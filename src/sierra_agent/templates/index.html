@@ -198,20 +198,20 @@
     <main id="shell">
       <section id="customer-view" class="panel">
         <div id="log">
-          <div class="msg agent">Welcome to Trailhead Hotel! Ask me about a reservation, rooms, or the Early Risers promo. 🛎️</div>
+          <div class="msg agent">Welcome to Trailhead Hotel! Ask me about a reservation or rooms. 🛎️</div>
         </div>
         <form id="chat-form">
           <input id="message" type="text" autocomplete="off" placeholder="How can we help with your stay?" />
           <button type="submit">Send 🛏️</button>
         </form>
         <button id="new-trail" type="button">Start a new chat</button>
-        <details id="trace" hidden>
-          <summary>Developer trace</summary>
-          <pre id="trace-text"></pre>
-        </details>
       </section>
 
       <section id="developer-view" class="panel" hidden>
+        <details id="trace" hidden>
+          <summary>Latest customer-chat trace</summary>
+          <pre id="trace-text"></pre>
+        </details>
         <div class="eval-toolbar" id="scenario-list"></div>
         <div id="eval-meta"></div>
         <div id="eval-log">
@@ -271,11 +271,18 @@
       function showTrace(trace) {
         tracePanel.hidden = !trace;
         if (!trace) return;
-        const tools = trace.tools.map((tool) => `${tool.name}: ${tool.outcome}`);
+        const guardEnabled = trace.early_risers_guard === "enabled";
+        const executedTools = (trace.tools || [])
+          .map((tool) => `${tool.name}: ${tool.outcome}`);
+        const exposedTools = trace.exposed_tools || [];
         traceText.textContent = [
           `outcome: ${trace.outcome}`,
+          `Early Risers guard: ${guardEnabled ? "ENABLED — customer mentioned promotion" : "HIDDEN — prompt and tools withheld"}`,
+          `promotion prompt: ${trace.promotion_prompt_enabled ? "enabled" : "hidden"}`,
+          `exposed tools: ${exposedTools.length ? exposedTools.join(", ") : "none"}`,
           `tool rounds: ${trace.tool_rounds}`,
-          ...tools,
+          `executed tools: ${executedTools.length ? "" : "none"}`,
+          ...executedTools.map((tool) => `  ${tool}`),
           `duration: ${trace.duration_ms} ms`,
           trace.error ? `error: ${trace.error}` : "",
         ].filter(Boolean).join("\n");
@@ -381,7 +388,7 @@
       document.getElementById("new-trail").addEventListener("click", async () => {
         await fetch("/reset", { method: "POST" });
         log.innerHTML = "";
-        addMsg(log, "agent", "Welcome to Trailhead Hotel! Ask me about a reservation, rooms, or the Early Risers promo. 🛎️");
+        addMsg(log, "agent", "Welcome to Trailhead Hotel! Ask me about a reservation or rooms. 🛎️");
         showTrace(null);
         input.focus();
       });

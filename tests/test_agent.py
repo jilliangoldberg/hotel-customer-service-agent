@@ -31,7 +31,12 @@ class FakeTools:
 
     @property
     def definitions(self) -> list[dict[str, Any]]:
-        return []
+        return [
+            {"name": "lookup_reservation"},
+            {"name": "get_available_rooms"},
+            {"name": "check_early_risers_window"},
+            {"name": "create_early_risers_code"},
+        ]
 
     def execute(self, name: str, arguments: str) -> dict[str, Any]:
         self.calls.append((name, arguments))
@@ -83,6 +88,45 @@ def test_returns_plain_model_response_and_continues_session() -> None:
 
     assert "previous_response_id" not in client.responses.requests[0]
     assert client.responses.requests[1]["previous_response_id"] == "response-1"
+
+
+def test_adds_early_risers_instructions_only_after_customer_mentions_it() -> None:
+    agent, client, _ = make_agent(
+        [
+            text_response("response-1", "How can I help?"),
+            text_response("response-2", "Here is how the promotion works."),
+            text_response("response-3", "Let me check that for you."),
+        ]
+    )
+
+    agent.reply("Hello")
+    hidden_trace = agent.last_trace
+    agent.reply("How does the Early Risers promotion work?")
+    agent.reply("Can I get a code?")
+
+    requests = client.responses.requests
+    assert "Early Risers Promotion:" not in requests[0]["instructions"]
+    assert "Early Risers Promotion:" in requests[1]["instructions"]
+    assert "Early Risers Promotion:" in requests[2]["instructions"]
+    assert {tool["name"] for tool in requests[0]["tools"]} == {
+        "lookup_reservation",
+        "get_available_rooms",
+    }
+    assert {tool["name"] for tool in requests[1]["tools"]} == {
+        "lookup_reservation",
+        "get_available_rooms",
+        "check_early_risers_window",
+        "create_early_risers_code",
+    }
+    assert requests[2]["tools"] == requests[1]["tools"]
+    assert hidden_trace["early_risers_guard"] == "hidden"
+    assert hidden_trace["promotion_prompt_enabled"] is False
+    assert hidden_trace["exposed_tools"] == [
+        "lookup_reservation",
+        "get_available_rooms",
+    ]
+    assert agent.last_trace["early_risers_guard"] == "enabled"
+    assert agent.last_trace["promotion_prompt_enabled"] is True
 
 
 def test_executes_tool_and_returns_output_to_model() -> None:
@@ -169,8 +213,32 @@ def test_rewrites_an_unsupported_capability_promise() -> None:
     assert rewrite_request["previous_response_id"] == "response-1"
     assert rewrite_request["tool_choice"] == "none"
     assert "Remove unsupported commitments" in rewrite_request["instructions"]
+    assert "Early Risers Promotion:" not in rewrite_request["instructions"]
     assert agent.last_trace["response_policy"] == "rewritten"
     assert unsafe not in json.dumps(agent.last_trace)
+
+
+def test_keeps_early_risers_enabled_during_a_policy_rewrite() -> None:
+    agent, client, _ = make_agent(
+        [
+            text_response("response-1", "I will process your refund."),
+            text_response("response-2", "I can explain the promotion."),
+        ]
+    )
+
+    assert (
+        agent.reply("Tell me about Early Risers and refund my reservation.")
+        == "I can explain the promotion."
+    )
+
+    rewrite_request = client.responses.requests[1]
+    assert "Early Risers Promotion:" in rewrite_request["instructions"]
+    assert {
+        tool["name"] for tool in rewrite_request["tools"]
+    } >= {
+        "check_early_risers_window",
+        "create_early_risers_code",
+    }
 
 
 def test_returns_safe_fallback_when_rewrite_remains_unsafe() -> None:
