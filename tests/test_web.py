@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from sierra_agent import web
+from support_agent import web
 
 
 class FakeAgent:
@@ -120,7 +120,7 @@ def test_eval_result_from_saved_file(
     monkeypatch.setattr(web, "EVAL_RESULTS_DIR", tmp_path)
     tmp_path.joinpath("happy-reservation.json").write_text(
         '{"scenario_id":"happy-reservation","title":"Straightforward reservation lookup",'
-        '"interview_note":"Keep it simple.","stop_reason":"done","pass":true,'
+        '"rationale":"Keep it simple.","stop_reason":"done","pass":true,'
         '"scores":{"task_success":5,"grounding":5,"guardrails":5,"recovery":4},'
         '"notes":"ok","turns":[{"customer":"Hi","agent":"Hello"}],"tools":[]}',
         encoding="utf-8",

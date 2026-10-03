@@ -48,11 +48,11 @@ DEFAULT_RULES = (
             r"we(?:['’]ll|\s+(?:will|can|are going to)))\s+"
             r"(?:process\s+(?:(?:a|the|your)\s+)?"
             r"(?:refunds?|returns?|cancellations?|"
-            r"reservation(?![-\s]+status\b))|cancel|refund)\b|"
+            r"reservation(?![-\s]+status\b))|cancel|refund|book|reserve|upgrade|change)\b|"
             r"\b(?:i(?:['’]ve|\s+have)|we(?:['’]ve|\s+have))\s+"
             r"(?:processed\s+(?:(?:a|the|your)\s+)?"
             r"(?:refunds?|returns?|cancellations?|"
-            r"reservation(?![-\s]+status\b))|cancelled|canceled|refunded)\b",
+            r"reservation(?![-\s]+status\b))|cancelled|canceled|refunded|booked|reserved|upgraded|changed)\b",
             re.IGNORECASE,
         ),
         frozenset({"reservation_changes"}),
@@ -79,8 +79,8 @@ DEFAULT_RULES = (
         "unsupported_room_inference",
         re.compile(
             r"\b(?:likely|probably|typically|should|could)\b"
-            r"[^.!?]{0,100}\b(?:fit|fits|capacity|liters?|balconies?|"
-            r"hydration|comfort|space|accommodate)\b",
+            r"[^.!?]{0,100}\b(?:fit|fits|capacity|occupancy|square feet|extra beds?|"
+            r"breakfast|pet policies|space|accommodate)\b",
             re.IGNORECASE,
         ),
         frozenset(),
@@ -93,8 +93,8 @@ _DIRECT_RECOMMENDATION = re.compile(
     re.IGNORECASE,
 )
 _KNOWN_EXTERNAL_HOTELS = re.compile(
-    r"\b(?:marriott|hilton(?:\s+atmos)?|hyatt(?:\s+aircontact)?|"
-    r"sheraton(?:\s+baltoro)?|westin)\b",
+    r"\b(?:marriott|hilton|hyatt|"
+    r"sheraton|westin)\b",
     re.IGNORECASE,
 )
 _POSITIVE_RECOMMENDATION = re.compile(

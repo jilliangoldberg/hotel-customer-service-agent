@@ -24,7 +24,7 @@
   {
     "RoomName": "Alpenglow Junior Suite",
     "RoomTypeID": "HTRM003",
-    "AvailableRooms": 200,
+    "AvailableRooms": 60,
     "Description": "One king bed, a separate sitting area, and a coffee maker.",
     "Tags": [
       "Suite",
@@ -35,7 +35,7 @@
   {
     "RoomName": "Family Connecting Rooms",
     "RoomTypeID": "HTRM004",
-    "AvailableRooms": 300,
+    "AvailableRooms": 40,
     "Description": "Two connecting rooms with one king bed and two twin beds.",
     "Tags": [
       "Family",
@@ -45,7 +45,7 @@
   {
     "RoomName": "City View Queen Room",
     "RoomTypeID": "HTRM005",
-    "AvailableRooms": 150,
+    "AvailableRooms": 200,
     "Description": "One queen bed, a city view, and a work desk.",
     "Tags": [
       "Queen bed",
@@ -55,7 +55,7 @@
   {
     "RoomName": "Accessible King Room",
     "RoomTypeID": "HTRM006",
-    "AvailableRooms": 180,
+    "AvailableRooms": 150,
     "Description": "One king bed, a roll-in shower, and step-free access.",
     "Tags": [
       "Accessible",

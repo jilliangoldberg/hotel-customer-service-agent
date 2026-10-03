@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from sierra_agent.agent import SierraAgent
-from sierra_agent.config import PROJECT_ROOT
-from sierra_agent.eval.harness import (
+from support_agent.agent import SupportAgent
+from support_agent.config import PROJECT_ROOT
+from support_agent.eval.harness import (
     EvalRun,
     RecordingTools,
     Turn,
@@ -19,9 +19,9 @@ from sierra_agent.eval.harness import (
     parse_judge_json,
     run_scenario,
 )
-from sierra_agent.eval.__main__ import main
-from sierra_agent.eval.reports import format_report, parse_report, write_reports
-from sierra_agent.eval.scenarios import Scenario, select_scenarios
+from support_agent.eval.__main__ import main
+from support_agent.eval.reports import format_report, parse_report, write_reports
+from support_agent.eval.scenarios import Scenario, select_scenarios
 
 
 JUDGMENT = {
@@ -36,56 +36,28 @@ JUDGMENT = {
 }
 
 
-class FakeResponses:
-    def __init__(self, responses: list[Any]) -> None:
-        self._responses = iter(responses)
-        self.requests: list[dict[str, Any]] = []
-
-    def create(self, **request: Any) -> Any:
-        self.requests.append(request)
-        return next(self._responses)
-
-
-class FakeClient:
-    def __init__(self, responses: list[Any]) -> None:
-        self.responses = FakeResponses(responses)
-
+from fakes import FakeClient, FakeModel, text_response, tool_call, tool_response
 
 class FakeInnerTools:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, Any]] = []
 
-    def execute(self, name: str, arguments: str) -> dict[str, Any]:
+    def execute(self, name: str, arguments: Any) -> dict[str, Any]:
         self.calls.append((name, arguments))
         return {"ok": True, "found": True, "tool": name}
 
     @property
     def definitions(self) -> list[dict[str, Any]]:
-        return []
-
-
-def text_response(text: str, response_id: str = "response") -> Any:
-    return SimpleNamespace(id=response_id, output=[], output_text=text)
-
-
-def tool_call(name: str, call_id: str, arguments: str = "{}") -> Any:
-    return SimpleNamespace(
-        type="function_call",
-        name=name,
-        call_id=call_id,
-        arguments=arguments,
-    )
-
-
-def tool_response(response_id: str, *calls: Any) -> Any:
-    return SimpleNamespace(id=response_id, output=list(calls), output_text="")
+        return [{"name": "lookup_reservation", "description": "Look up a guest reservation.",
+                 "parameters": {"type": "object", "properties": {"email": {"type": "string"}, "reservation_number": {"type": "string"}},
+                                "required": ["email", "reservation_number"], "additionalProperties": False}, "strict": True}]
 
 
 def tiny_scenario(**overrides: Any) -> Scenario:
     values: dict[str, Any] = {
         "id": "tiny",
         "title": "Tiny",
-        "interview_note": "Keep it simple.",
+        "rationale": "Keep it simple.",
         "simulator_goal": "Ask one question.",
         "simulator_behavior": "Be brief.",
         "judge_criteria": "Answer the question.",
@@ -95,11 +67,13 @@ def tiny_scenario(**overrides: Any) -> Scenario:
     return Scenario(**values)
 
 
-def make_agent(responses: list[Any]) -> tuple[SierraAgent, RecordingTools]:
+def make_agent(responses: list[Any]) -> tuple[SupportAgent, RecordingTools]:
     recording = RecordingTools(FakeInnerTools())
-    agent = SierraAgent(
-        client=FakeClient(responses),  # type: ignore[arg-type]
-        model="gpt-4o-mini",
+    client = FakeClient(responses)
+    agent = SupportAgent(
+        client=client,  # type: ignore[arg-type]
+        sdk_model=FakeModel(client),
+        model="openai-test-model",
         tools=recording,
     )
     return agent, recording
@@ -113,7 +87,7 @@ def test_done_stops_the_loop_without_calling_the_agent() -> None:
 
     run = run_scenario(
         eval_client=eval_client,
-        model="gpt-4o-mini",
+        model="openai-test-model",
         scenario=tiny_scenario(),
         agent=agent,
         recording=recording,
@@ -131,7 +105,7 @@ def test_run_scenario_emits_progress_events() -> None:
     events: list[str] = []
     eval_client = FakeClient(
         [
-            text_response("Where is my pack?"),
+            text_response("Where is my reservation?"),
             text_response("DONE"),
             text_response(json.dumps(JUDGMENT)),
         ]
@@ -140,7 +114,7 @@ def test_run_scenario_emits_progress_events() -> None:
 
     run_scenario(
         eval_client=eval_client,
-        model="gpt-4o-mini",
+        model="openai-test-model",
         scenario=tiny_scenario(),
         agent=agent,
         recording=recording,
@@ -151,7 +125,7 @@ def test_run_scenario_emits_progress_events() -> None:
 
 
 def test_progress_bar_fills_with_completed_count() -> None:
-    from sierra_agent.eval.__main__ import _progress_bar
+    from support_agent.eval.__main__ import _progress_bar
 
     empty = _progress_bar(0, 6)
     full = _progress_bar(6, 6)
@@ -165,7 +139,7 @@ def test_progress_bar_fills_with_completed_count() -> None:
 def test_max_turns_stops_the_loop() -> None:
     eval_client = FakeClient(
         [
-            text_response("Where is my pack?"),
+            text_response("Where is my reservation?"),
             text_response("Still waiting."),
             text_response(json.dumps(JUDGMENT)),
         ]
@@ -179,7 +153,7 @@ def test_max_turns_stops_the_loop() -> None:
 
     run = run_scenario(
         eval_client=eval_client,
-        model="gpt-4o-mini",
+        model="openai-test-model",
         scenario=tiny_scenario(max_turns=2),
         agent=agent,
         recording=recording,
@@ -187,14 +161,14 @@ def test_max_turns_stops_the_loop() -> None:
 
     assert run.stop_reason == "max_turns"
     assert [turn.customer for turn in run.turns] == [
-        "Where is my pack?",
+        "Where is my reservation?",
         "Still waiting.",
     ]
     assert len(eval_client.responses.requests) == 3
 
 
 def test_recording_captures_execute_during_a_run() -> None:
-    arguments = '{"email":"hiker@example.com","reservation_number":"#H001"}'
+    arguments = {"email": "hiker@example.com", "reservation_number": "#H001"}
     eval_client = FakeClient(
         [
             text_response("Where is reservation #H001?"),
@@ -214,7 +188,7 @@ def test_recording_captures_execute_during_a_run() -> None:
 
     run = run_scenario(
         eval_client=eval_client,
-        model="gpt-4o-mini",
+        model="openai-test-model",
         scenario=tiny_scenario(),
         agent=agent,
         recording=recording,
@@ -262,7 +236,7 @@ def test_run_uses_fenced_judge_json() -> None:
 
     run = run_scenario(
         eval_client=eval_client,
-        model="gpt-4o-mini",
+        model="openai-test-model",
         scenario=tiny_scenario(),
         agent=agent,
         recording=recording,
@@ -271,7 +245,7 @@ def test_run_uses_fenced_judge_json() -> None:
     assert run.judgment == JUDGMENT
 
 
-def test_execute_scenario_uses_separate_agent_and_eval_models() -> None:
+def test_execute_scenario_uses_separate_agent_and_eval_models(monkeypatch) -> None:
     client = FakeClient(
         [
             text_response("Hello"),
@@ -281,6 +255,12 @@ def test_execute_scenario_uses_separate_agent_and_eval_models() -> None:
         ]
     )
 
+    from support_agent.eval import harness
+    def create_test_agent(**kwargs):
+        model = FakeModel(kwargs['client'])
+        model.name = kwargs['model']
+        return SupportAgent(**kwargs, sdk_model=model)
+    monkeypatch.setattr(harness, 'create_agent', create_test_agent)
     execute_scenario(
         client,
         "agent-model",
@@ -305,7 +285,7 @@ def test_unparsed_judge_output_fails_the_run() -> None:
 
     run = run_scenario(
         eval_client=eval_client,
-        model="gpt-4o-mini",
+        model="openai-test-model",
         scenario=tiny_scenario(),
         agent=agent,
         recording=recording,
@@ -386,7 +366,7 @@ def test_agent_error_still_reaches_the_judge() -> None:
 
     run = run_scenario(
         eval_client=eval_client,
-        model="gpt-4o-mini",
+        model="openai-test-model",
         scenario=tiny_scenario(),
         agent=agent,
         recording=recording,
@@ -553,7 +533,7 @@ def test_markdown_report_is_readable() -> None:
     run = EvalRun(
         scenario=tiny_scenario(id="tiny", title="Tiny"),
         turns=[
-            Turn(customer="Where is my pack?", agent="Could I have your email?"),
+            Turn(customer="Where is my reservation?", agent="Could I have your email?"),
         ],
         tool_calls=[
             {
@@ -569,7 +549,7 @@ def test_markdown_report_is_readable() -> None:
     report = format_report(run)
 
     assert report.startswith("# tiny: Tiny")
-    assert "**You:** Where is my pack?" in report
+    assert "**You:** Where is my reservation?" in report
     assert "**Agent:** Could I have your email?" in report
     assert "- `lookup_reservation` → found" in report
     assert "**Result:** PASS" in report

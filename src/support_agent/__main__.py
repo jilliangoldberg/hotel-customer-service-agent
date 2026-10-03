@@ -2,12 +2,12 @@
 
 import sys
 
-from openai import OpenAIError
+from openai import APIError
 
-from sierra_agent.agent import AgentLoopError
-from sierra_agent.config import ConfigurationError
-from sierra_agent.factory import build_agent
-from sierra_agent.tools import DataError
+from support_agent.agent import AgentLoopError
+from support_agent.config import ConfigurationError
+from support_agent.factory import build_agent
+from support_agent.tools import DataError
 
 
 def main() -> int:
@@ -37,7 +37,7 @@ def main() -> int:
 
         try:
             response = agent.reply(user_message)
-        except OpenAIError:
+        except APIError:
             print(
                 "Agent: I couldn't reach the support service. "
                 "Please try again in a moment.",

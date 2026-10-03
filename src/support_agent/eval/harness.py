@@ -7,15 +7,15 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sierra_agent.agent import SierraAgent
-from sierra_agent.eval.scenarios import (
+from support_agent.agent import SupportAgent
+from support_agent.eval.scenarios import (
     JUDGE_INSTRUCTIONS,
     SIMULATOR_INSTRUCTIONS,
     Scenario,
 )
-from sierra_agent.factory import create_agent
-from sierra_agent.policy import DEFAULT_POLICY, PolicyContext
-from sierra_agent.tools import HotelTools, ToolHost
+from support_agent.factory import create_agent
+from support_agent.policy import DEFAULT_POLICY, PolicyContext
+from support_agent.tools import HotelTools, ToolHost
 
 
 DONE_TOKEN = "DONE"
@@ -58,14 +58,14 @@ class RecordingTools:
     def definitions(self) -> list[dict[str, Any]]:
         return self._inner.definitions
 
-    def execute(self, name: str, arguments: str) -> dict[str, Any]:
+    def execute(self, name: str, arguments: Any) -> dict[str, Any]:
         """Dispatch one tool call and append it to the log."""
 
         result = self._inner.execute(name, arguments)
         self.calls.append(
             {
                 "name": name,
-                "arguments": _parse_arguments(arguments),
+                "arguments": arguments,
                 "result": result,
             }
         )
@@ -248,7 +248,7 @@ def run_scenario(
     eval_client: Any,
     model: str,
     scenario: Scenario,
-    agent: SierraAgent,
+    agent: SupportAgent,
     recording: RecordingTools,
     on_progress: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> EvalRun:
@@ -337,6 +337,7 @@ def execute_scenario(
     scenario: Scenario,
     data_dir: Path,
     promotion_secret: str,
+    agent_effort: str = "medium",
     on_progress: Callable[[str, dict[str, Any]], None] | None = None,
 ) -> EvalRun:
     """Build tools and an agent, then run one simulated-customer scenario."""
@@ -352,6 +353,7 @@ def execute_scenario(
         client=client,
         model=agent_model,
         tools=recording,
+        effort=agent_effort,
     )
     return run_scenario(
         eval_client=client,
@@ -364,24 +366,22 @@ def execute_scenario(
 
 
 def _complete(client: Any, model: str, instructions: str, input_text: str) -> str:
-    """Send one Responses API request with no tools."""
+    """Send one OpenAI Responses API request for the simulator or judge."""
+
+    from support_agent.agent import ensure_complete
 
     response = client.responses.create(
         model=model,
+        max_output_tokens=16000,
         instructions=instructions,
-        input=input_text,
+        input=[{"role": "user", "content": input_text}],
+        store=False,
     )
-    text = (response.output_text or "").strip()
+    ensure_complete(response)
+    text = response.output_text.strip()
     if not text:
         raise RuntimeError("Eval model returned no text.")
     return text
-
-
-def _parse_arguments(arguments: str) -> Any:
-    try:
-        return json.loads(arguments)
-    except json.JSONDecodeError:
-        return arguments
 
 
 def _facts_block(facts: dict[str, str]) -> str:
@@ -420,7 +420,7 @@ def _judge_input(
 ) -> str:
     return (
         f"Scenario: {scenario.id} — {scenario.title}\n"
-        f"Interview note: {scenario.interview_note}\n\n"
+        f"Rationale: {scenario.rationale}\n\n"
         f"Success criteria (for the AGENT):\n{scenario.judge_criteria}\n\n"
         f"Stop reason: {stop_reason}\n\n"
         f"Transcript:\n{_transcript_block(turns)}\n\n"

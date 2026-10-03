@@ -4,25 +4,26 @@ import argparse
 from pathlib import Path
 import sys
 
-from openai import OpenAI, OpenAIError
+from openai import APIError
 
-from sierra_agent.config import PROJECT_ROOT, ConfigurationError, Settings
-from sierra_agent.eval.harness import SCORE_KEYS, EvalRun, execute_scenario
-from sierra_agent.eval.reports import format_report, write_reports
-from sierra_agent.eval.scenarios import SCENARIOS, select_scenarios
-from sierra_agent.tools import DataError
+from support_agent.config import PROJECT_ROOT, ConfigurationError, Settings
+from support_agent.eval.harness import SCORE_KEYS, EvalRun, execute_scenario
+from support_agent.eval.reports import format_report, write_reports
+from support_agent.eval.scenarios import SCENARIOS, select_scenarios
+from support_agent.factory import create_client
+from support_agent.tools import DataError
 
 
 def main(argv: list[str] | None = None) -> int:
-    """List scenarios or run the eval suite. Spends OpenAI credits."""
+    """List scenarios or run the eval suite. Spends OpenAI API credits."""
 
     parser = argparse.ArgumentParser(
-        prog="python -m sierra_agent.eval",
+        prog="python -m support_agent.eval",
         description=(
-            "Run simulated-customer conversations against the Sierra agent "
-            "and score them with a judge model. Uses OPENAI_API_KEY and "
-            "OPENAI_MODEL; OPENAI_EVAL_MODEL is optional. This is not pytest "
-            "and is not free."
+            "Run simulated-customer conversations against the support agent "
+            "and score them with a judge model. Uses OPENAI_API_KEY, "
+            "AGENT_MODEL, and EVAL_MODEL. This is "
+            "not pytest and is not free."
         ),
     )
     parser.add_argument(
@@ -61,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        client = OpenAI(api_key=settings.openai_api_key)
+        client = create_client(settings)
         total = len(scenarios)
         print(f"Running {total} scenario{'s' if total != 1 else ''}...", file=sys.stderr)
         runs: list[EvalRun] = []
@@ -69,18 +70,19 @@ def main(argv: list[str] | None = None) -> int:
             progress = _CliProgress(index, total, scenario.id)
             run = execute_scenario(
                 client,
-                settings.openai_model,
-                settings.openai_eval_model,
+                settings.agent_model,
+                settings.eval_model,
                 scenario,
                 settings.data_dir,
                 settings.promotion_secret,
+                agent_effort=settings.agent_effort,
                 on_progress=progress,
             )
             progress.finish(
                 "PASS" if run.judgment.get("pass") else "FAIL"
             )
             runs.append(run)
-    except (OpenAIError, DataError, ValueError) as error:
+    except (APIError, DataError, ValueError) as error:
         print(f"Eval error: {error}", file=sys.stderr)
         return 1
 

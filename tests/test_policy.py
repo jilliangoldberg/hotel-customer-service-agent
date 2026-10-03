@@ -1,6 +1,6 @@
 """Focused tests for shared capability policy."""
 
-from sierra_agent.policy import (
+from support_agent.policy import (
     DEFAULT_CAPABILITIES,
     DEFAULT_POLICY,
     Capability,

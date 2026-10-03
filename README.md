@@ -1,20 +1,16 @@
-# Trailhead Hotel Agent
+# Hotel Customer Service Agent
 
-Welcome to your next adventure! 🏨
+A small guest support app for **Trailhead Hotel**, a fictional hotel used to
+explore the [OpenAI Agents SDK](https://developers.openai.com/api/docs/guides/agents/sdk),
+deterministic tools, response safety checks, and simulated customer evaluations.
 
-The Trailhead Hotel Agent is your trail guide for:
-
-- Tracking down a reservation
-- Finding available rooms for your next outing
-- Claiming an Early Risers Promotion code
-
-Try it out in your terminal or local web browser. Happy camping! 🛎️
+It can check an existing reservation, recommend rooms from a sample catalog,
+and issue an Early Risers Promotion code during a verified morning window.
+The terminal and Flask chat share the same agent and tools.
 
 ## Setup
 
-Requires Python 3.11 or newer.
-
-### 1. Install
+Requires Python 3.11 or newer and an OpenAI Platform API key.
 
 ```bash
 python -m venv .venv
@@ -23,203 +19,126 @@ pip install -e ".[dev]"
 cp .env.example .env
 ```
 
-### 2. Configure
-
-Update the copied `.env` file:
+Update `.env`:
 
 ```dotenv
 OPENAI_API_KEY=your-api-key
-OPENAI_MODEL=gpt-4.1-mini
-OPENAI_EVAL_MODEL=
+AGENT_MODEL=gpt-5.4
+EVAL_MODEL=gpt-5.4-mini
+AGENT_EFFORT=medium
 PROMOTION_SECRET=paste-generated-secret-here
 ```
 
-`OPENAI_EVAL_MODEL` is optional and defaults to `OPENAI_MODEL`. Use any models your OpenAI project can access.
-
-Generate a promotion secret with:
-
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-Paste the generated value into `PROMOTION_SECRET`.
-
-Never commit your `.env` file.
-
-### 3. Run
+`OPENAI_API_KEY` is required. Generate a promotion secret with
+`python -c "import secrets; print(secrets.token_hex(32))"` and keep `.env` private.
+The default models support `none`, `low`, `medium`, `high`, and `xhigh` reasoning
+effort. When changing models, check their supported reasoning settings.
 
 Terminal chat:
 
 ```bash
-python -m sierra_agent
+python -m support_agent
 ```
-
-Type `exit`, `quit`, or `Ctrl-C` to stop.
 
 Local web chat:
 
 ```bash
-python -m sierra_agent.web
+python -m support_agent.web
 ```
 
-Then open [http://127.0.0.1:5050](http://127.0.0.1:5050).
+Open [http://127.0.0.1:5050](http://127.0.0.1:5050). The Customer view offers guest
+chat. The Developer view runs evaluations and shows transcripts, scores, and
+redacted execution traces. Chat and evaluations use billable OpenAI API calls.
 
-The web app has two views:
+## Supported requests
 
-- **Customer** — Chat with the support agent
-- **Developer** — Run eval scenarios and evaluate results from agent testing
+- **Reservation status:** requires both email and reservation number. Returns
+  the reservation status, reserved rooms, and check-in date when provided.
+  A miss does not disclose which identifier failed. Try the demo pair
+  `morgan.lee@example.com` and `#H002`.
+- **Room recommendations:** uses only the hotel's returned room names and
+  stated features. Availability is a static sample snapshot, without checks
+  for specific stay dates or the ability to hold or book rooms.
+- **Early Risers Promotion:** issues one stable daily code per email after an
+  explicit request and a verified 8:00–10:00 AM Pacific window. The promotion
+  tools stay hidden until the guest mentions Early Risers. A closed window is
+  checked before requesting personal information.
 
+The app cannot create or change bookings, cancel reservations, process refunds,
+upgrade rooms, arrange check-in exceptions, contact hotel staff, or send emails.
+No rates, redemption terms, or discount amounts are supplied by the demo.
 
+## How it works
 
-## Current Features
+`SupportAgent` builds an SDK `Agent` with `FunctionTool` instances from the local
+tool registry. `Runner.run` manages model calls and tool results using
+`OpenAIResponsesModel`; Python validates identifiers, reads trusted sample data,
+checks the clock, and generates promotion codes.
 
-- 🗓️ **Reservation status:** Looks up a reservation using an email and reservation number. Returns the status and a USPS check-in date when available. Failed lookups do not reveal which identifier was incorrect.
-- 🛏️ **Room recommendations:** Suggests only available catalog items. The agent may ask one clarifying question for broad requests.
-- 🌅 **Early Risers Promotion:** Helps customers claim one daily code per email after an explicit request and a verified 8:00 AM to 10:00 AM Pacific-time window.
+The app keeps local conversation history and commits it only after a successful
+turn. SDK input items preserve tool calls, correlated results, and reasoning
+items between turns. A maximum of five tool rounds bounds each guest turn.
+Incomplete responses and refusals raise `AgentLoopError`, and failed turns
+leave the last successful history and promotion state intact.
 
+The response policy checks for unsupported commitments and off-catalog room
+recommendations. A violation triggers one tool-free SDK rewrite. If that still
+fails the policy, the app returns a deterministic fallback. Unsafe drafts are
+removed from future history so the next turn reflects what the guest saw.
 
+Each turn creates and closes its async OpenAI client inside the run, allowing a
+Flask conversation to move safely between request threads. The application
+trace contains tool names, outcomes, and timing rather than guest identifiers.
+SDK tracing is disabled, and Responses storage is disabled. Local eval reports
+contain full transcripts and tool evidence and should be treated as private.
 
-## How It Works
+## Project guide
 
-The **model** handles conversation, intent, and tool selection. **Python scripts** handle the facts and rules that must stay deterministic and consistent, such as reservation matching, availability, time checks, check-in dates, and more.
+The current code lives in `src/support_agent/`:
 
-When a customer sends a message:
+- `agent.py`: SDK runner, conversation state, complete-response checks, and policy rewrite
+- `tools.py`: reservation lookup, room catalog, and promotion tools
+- `prompt.py`: hotel voice, capability boundaries, and promotion instructions
+- `policy.py`: deterministic output checks and safe fallback
+- `config.py` / `factory.py`: environment settings and shared composition
+- `__main__.py` / `web.py`: terminal and Flask interfaces
+- `eval/`: simulated guest scenarios, judge, reports, and CLI
 
-1. The terminal or web app passes it to the model.
-2. The model decides whether it needs a reservation, room, or promotion tool. It may call several, across up to five tool rounds per turn.
-3. Python validates each request as untrusted input, runs the tool, and returns the result to the model.
-4. The model writes a customer-friendly response.
-5. A final policy check runs before anything is shown: on a known unsupported promise or action it requests one rewrite, then falls back to a safe capability list.
+`data/guest_reservations.json` and `data/room_catalog.json` contain fictional
+guest and room records. Earlier commits use the original `sierra_agent` package
+with OpenAI Responses API orchestration; the later package refactor introduces
+the Agents SDK implementation.
 
-Customer messages are sent to OpenAI to generate responses and are handled according to the account's configured data controls.
-
-## Project Guide
-
-The main code lives in `src/sierra_agent/`:
-
-- `__main__.py` — terminal chat entry point
-- `agent.py` — OpenAI tool-calling loop
-- `config.py` — environment configuration and validation
-- `tools.py` — reservation, catalog, and promotion tools
-- `prompt.py` — agent instructions and tone
-- `policy.py` — customer-response safety checks
-- `factory.py` — builds the shared agent used by every interface
-- `web.py` — local Flask app
-- `eval/` — simulated conversation evals and reports
-  - `scenarios.py` — customer scenarios and success criteria
-  - `harness.py` — runs the simulated conversations and judging
-  - `reports.py` — creates Markdown and JSON results
-  - `__main__.py` — command-line interface for running evals
-
-Supporting files:
-
-- `data/` — sample reservations and room catalog
-- `tests/` — deterministic unit and integration tests
-- `eval-results/` — generated eval reports
-
-
-
-## Testing
-
-Run the test suite:
+## Testing and evaluations
 
 ```bash
 pytest
+python -m support_agent.eval --list
+python -m support_agent.eval
+python -m support_agent.eval --scenario derail-reservation
 ```
 
-Tests use fake OpenAI responses, so they do not call the API or spend credits. They protect the high-risk contracts: privacy-safe lookup failures, promotion time boundaries, malformed data, browser-session isolation, recovery after a failed turn, the tool-round limit, and trace redaction.
+Tests use deterministic fake responses with the real SDK runner and make no
+API calls. They cover identifier privacy, normalized reservation lookup,
+malformed data, promotion time boundaries and proof tokens, browser isolation,
+tool dispatch, conversation rollback, incomplete replies, refusals, safety
+rewrites, evaluation gates, and trace redaction.
 
-## Simulated Evals
+For live evaluations, one model simulates a guest, the agent responds, and a
+separate Responses API request judges the transcript. `EVAL_MODEL` is separate
+from `AGENT_MODEL` by default. Deterministic gates override a passing judge when
+required tools are missing, forbidden tools run, agent errors occur, or response
+policy violations appear. `--list` requires no API key or billable request.
 
-Simulated evals create a full agent-to-agent conversation. One LLM role plays a customer with a specific goal, facts, and speaking style; the real support agent responds; then a separate judge request scores the completed interaction. This tests realistic, messy conversations that are difficult to cover comprehensively with deterministic or manual tests.
+Results are saved locally to `eval-results/` and appear in the Developer view.
 
-The customer and judge use `OPENAI_EVAL_MODEL`, which defaults to `OPENAI_MODEL`. Choosing a different eval model from the support agent can reduce correlated self-evaluation bias. Running scenarios calls the OpenAI API and consumes billable usage; `--list` does not.
+## Extending the demo
 
-List available scenarios:
+Add a tool handler and strict JSON schema in `tools.py`, add instructions in
+`prompt.py`, update the capability policy if needed, and add a focused test and
+evaluation scenario. Potential experiments include SDK streaming, token and
+cost reporting, structured judge outputs, multi-trial evaluations, and a real
+reservation backend with date-based availability.
 
-```bash
-python -m sierra_agent.eval --list
-```
-
-Run all scenarios:
-
-```bash
-python -m sierra_agent.eval
-```
-
-Run one scenario:
-
-```bash
-python -m sierra_agent.eval --scenario derail-reservation
-```
-
-Results are saved in `eval-results/` and can also be viewed from the web app's Developer view.
-
-## Adding a Capability
-
-1. Add and validate the tool handler in `tools.py`.
-2. Register its model-facing schema.
-3. Add customer-facing instructions in `prompt.py`.
-4. Update `policy.py` if the capability changes a safety boundary.
-5. Add tests and, when useful, an eval scenario.
-
-State-changing tools such as refunds need authentication, confirmation, authorization, and idempotency before they are safe to add.
-
-## Technical Decisions
-
-**Simple, shared architecture**
-
-A single OpenAI Responses API loop handles every request. The capabilities are distinct and small enough that a workflow graph or agent framework would add unnecessary complexity. The terminal, web app, and eval harness all build this same agent through `factory.py`, reducing drift between development, testing, and the customer experience.
-
-**Deterministic code for customer-facing facts**
-
-The model handles intent, missing-information questions, tool selection, and tone. Anything that must be exact—reservations, availability, time checks, check-in dates, and promotion codes—lives in deterministic Python so it remains predictable and testable. Each tool keeps its schema beside its handler, and Python validates generated arguments as untrusted input.
-
-**Safety and privacy in code**
-
-The prompt defines capability boundaries, but instructions alone cannot stop a model from promising an escalation or recommending an outside brand. `policy.py` adds a narrow set of rules tied to observed failures: the final reply is checked, an unsafe one gets a single constrained rewrite, and a still-unsafe one is replaced by a fallback built from enabled capabilities. `PolicyContext` records the catalog items a tool actually returned, so off-list recommendations are caught rather than just discouraged. The same policy runs at runtime and as eval gates — defense in depth for known failures, not a general policy engine.
-
-Failed reservation lookups stay generic so they cannot reveal which identifier was wrong, browser sessions are isolated, and developer traces omit customer messages, identifiers, tool data, and model reasoning.
-
-**LLM customer simulation and judging**
-
-Behavioral evals use separate customer and judge requests. Deterministic gates override a passing judge on agent errors, missing required tools, forbidden tools, or known policy violations. One run is a single non-deterministic trial, not a reliability estimate.
-
-#### Other Technical Decisions
-
-- Conversations stay in memory to keep local setup simple. The terminal has one conversation per process, while the web app separates browsers with signed session cookies.
-- Failed turns return to the last completed conversation checkpoint instead of retrying automatically.
-- Local JSON data and full-catalog recommendations keep the sample app self-contained; larger production data would need databases and retrieval.
-
-
-
-## Known Limitations
-
-- Sessions and traces are in-memory: no persistence, no authentication, and an ephemeral cookie secret. Production needs shared bounded storage and a fixed secret.
-- The Early Risers code can be generated but not redeemed.
-- Recommendations pass the full catalog to the model; a larger catalog needs search or retrieval.
-- Evals run one trial per scenario. There is no pass-rate, regression threshold, or cost and latency check_in_date yet.
-
-
-
-## 🚀 Future Improvements
-
-**Production integrations**
-
-Replace sample JSON with database and commerce APIs for live reservations, availability, promotion redemption, returns, and purchases. State-changing actions would require authentication, confirmation, authorization, and idempotency.
-
-**Personalized recommendations**
-
-Use purchase history, preferences, sizing, and past conversations—with clear privacy controls—to make suggestions more relevant.
-
-**Visual room search**
-
-Let customers upload an image to find similar rooms or describe the style and features they want.
-
-**Agent infrastructure**
-
-As the tool set grows, evaluate the OpenAI Agents SDK for built-in tracing, guardrails, handoffs, and tool orchestration.
-
-**Stronger evaluation**
-
-Add more scenarios, repeated trials, pass-rate check_in_date, regression thresholds, and cost and latency measurements.
+Sessions and traces currently live in memory. This demo has no authentication,
+reservation management, payment integration, or promotion redemption service.

@@ -5,15 +5,15 @@ from secrets import token_urlsafe
 from threading import Lock
 
 from flask import Flask, jsonify, render_template, request, session
-from openai import OpenAI, OpenAIError
+from openai import APIError
 
-from sierra_agent.agent import AgentLoopError, SierraAgent
-from sierra_agent.config import PROJECT_ROOT, ConfigurationError, Settings
-from sierra_agent.eval.harness import execute_scenario
-from sierra_agent.eval.reports import load_result, scenario_listing, serialize_run, write_reports
-from sierra_agent.eval.scenarios import SCENARIOS, select_scenarios
-from sierra_agent.factory import build_agent
-from sierra_agent.tools import DataError
+from support_agent.agent import AgentLoopError, SupportAgent
+from support_agent.config import PROJECT_ROOT, ConfigurationError, Settings
+from support_agent.eval.harness import execute_scenario
+from support_agent.eval.reports import load_result, scenario_listing, serialize_run, write_reports
+from support_agent.eval.scenarios import SCENARIOS, select_scenarios
+from support_agent.factory import build_agent, create_client
+from support_agent.tools import DataError
 
 app = Flask(__name__)
 app.secret_key = token_urlsafe(32)
@@ -25,7 +25,7 @@ EVAL_RESULTS_DIR = PROJECT_ROOT / "eval-results"
 class ChatSession:
     """One browser's agent and a lock for its conversation state."""
 
-    agent: SierraAgent
+    agent: SupportAgent
     lock: Lock = field(default_factory=Lock)
 
 
@@ -84,7 +84,7 @@ def chat():
             reply = chat_session.agent.reply(message)
     except (ConfigurationError, DataError):
         return _setup_error()
-    except OpenAIError:
+    except APIError:
         if chat_session is not None:
             return _chat_response(
                 "I couldn't reach the support service. Please try again in a moment.",
@@ -150,20 +150,21 @@ def eval_run():
 
     try:
         settings = Settings.from_env()
-        client = OpenAI(api_key=settings.openai_api_key)
+        client = create_client(settings)
         with _eval_lock:
             run = execute_scenario(
                 client,
-                settings.openai_model,
-                settings.openai_eval_model,
+                settings.agent_model,
+                settings.eval_model,
                 scenarios[0],
                 settings.data_dir,
                 settings.promotion_secret,
+                agent_effort=settings.agent_effort,
             )
             write_reports([run], EVAL_RESULTS_DIR)
     except ConfigurationError:
         return _setup_error()
-    except (OpenAIError, DataError, ValueError):
+    except (APIError, DataError, ValueError):
         return jsonify({"error": "eval failed"}), 502
 
     return jsonify(serialize_run(run))

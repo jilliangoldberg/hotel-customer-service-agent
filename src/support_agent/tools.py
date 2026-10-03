@@ -2,7 +2,7 @@
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import date, datetime, time
 import hashlib
 import hmac
 import json
@@ -42,7 +42,7 @@ class ToolHost(Protocol):
     @property
     def definitions(self) -> list[dict[str, Any]]: ...
 
-    def execute(self, name: str, arguments: str) -> dict[str, Any]: ...
+    def execute(self, name: str, arguments: Any) -> dict[str, Any]: ...
 
 
 def exposed_tool_definitions(
@@ -113,7 +113,6 @@ class HotelTools:
         return (
             ToolSpec(
                 definition={
-                    "type": "function",
                     "name": "lookup_reservation",
                     "description": (
                         "Look up one reservation after the customer has given both "
@@ -148,7 +147,6 @@ class HotelTools:
             ),
             ToolSpec(
                 definition={
-                    "type": "function",
                     "name": "get_available_rooms",
                     "description": (
                         "Return every available catalog item. Call before "
@@ -169,7 +167,6 @@ class HotelTools:
             ),
             ToolSpec(
                 definition={
-                    "type": "function",
                     "name": "check_early_risers_window",
                     "description": (
                         "Check whether the Early Risers Promotion is currently "
@@ -191,7 +188,6 @@ class HotelTools:
             ),
             ToolSpec(
                 definition={
-                    "type": "function",
                     "name": "create_early_risers_code",
                     "description": (
                         "Create today's Early Risers code for one email. Call only "
@@ -235,7 +231,7 @@ class HotelTools:
 
     @property
     def definitions(self) -> list[dict[str, Any]]:
-        """Return the OpenAI schemas for all registered tools."""
+        """Return the OpenAI tool schemas for all registered tools."""
 
         return [spec.definition for spec in self._specs]
 
@@ -293,6 +289,13 @@ class HotelTools:
                 raise DataError(
                     f"guest_reservations.json record {index} has an invalid CheckInDate."
                 )
+            if check_in_date is not None:
+                try:
+                    date.fromisoformat(check_in_date)
+                except ValueError as error:
+                    raise DataError(
+                        f"guest_reservations.json record {index} has an invalid CheckInDate."
+                    ) from error
             rooms = reservation["RoomsReserved"]
             if not isinstance(rooms, list) or not rooms or not all(
                 self._has_text(room) for room in rooms
@@ -352,7 +355,7 @@ class HotelTools:
         return f"#{compact}" if compact else None
 
     def _room_names_for_room_type_ids(self, room_type_ids: Any) -> list[str]:
-        """Map ordered RoomTypeIDs to catalog names, keeping unknown RoomTypeIDs as-is."""
+        """Map reserved room types to catalog names, keeping unknown RoomTypeIDs as-is."""
 
         if not isinstance(room_type_ids, list):
             return []
@@ -514,16 +517,9 @@ class HotelTools:
             "code": f"EARLY-{digest[:12].upper()}",
         }
 
-    def execute(self, name: str, arguments_json: str) -> dict[str, Any]:
+    def execute(self, name: str, arguments: Any) -> dict[str, Any]:
         """Validate and dispatch one model-requested tool call."""
 
-        try:
-            arguments = json.loads(arguments_json)
-        except json.JSONDecodeError:
-            return _reject(
-                "invalid_tool_arguments",
-                "Call the tool again with the required fields from the schema.",
-            )
         if not isinstance(arguments, dict):
             return _reject(
                 "invalid_tool_arguments",

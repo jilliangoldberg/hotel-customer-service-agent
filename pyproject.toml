@@ -5,12 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hotel-customer-service-agent"
 version = "0.1.0"
-description = "A minimal tool-calling support agent for Trailhead Hotel."
+description = "A hotel guest support agent built with the OpenAI Agents SDK."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "flask",
-    "openai",
+    "openai>=3.0,<4",
+    "openai-agents>=0.23.1,<0.24",
     "python-dotenv",
 ]
 
@@ -18,12 +19,12 @@ dependencies = [
 dev = ["pytest"]
 
 [project.scripts]
-sierra-agent = "sierra_agent.__main__:main"
-sierra-agent-web = "sierra_agent.web:main"
-sierra-agent-eval = "sierra_agent.eval.__main__:main"
+support-agent = "support_agent.__main__:main"
+support-agent-web = "support_agent.web:main"
+support-agent-eval = "support_agent.eval.__main__:main"
 
 [tool.setuptools.package-data]
-sierra_agent = ["templates/*"]
+support_agent = ["templates/*"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

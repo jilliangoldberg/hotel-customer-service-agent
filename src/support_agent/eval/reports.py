@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from sierra_agent.eval.harness import SCORE_KEYS, EvalRun
-from sierra_agent.eval.scenarios import Scenario
+from support_agent.eval.harness import SCORE_KEYS, EvalRun
+from support_agent.eval.scenarios import Scenario
 
 
 def tool_outcome(result: object) -> str:
@@ -39,7 +39,7 @@ def serialize_run(run: EvalRun) -> dict[str, Any]:
     return {
         "scenario_id": run.scenario.id,
         "title": run.scenario.title,
-        "interview_note": run.scenario.interview_note,
+        "rationale": run.scenario.rationale,
         "stop_reason": run.stop_reason,
         "pass": bool(run.judgment.get("pass")),
         "scores": run.judgment.get("scores") or {},
@@ -68,7 +68,7 @@ def format_report(run: EvalRun) -> str:
         "",
         f"**Result:** {verdict}",
         f"**Scores:** {score_line}",
-        f"**Interview note:** {run.scenario.interview_note}",
+        f"**Rationale:** {run.scenario.rationale}",
         f"**Stop reason:** {run.stop_reason}",
         "",
         "## Transcript",
@@ -288,7 +288,7 @@ def parse_report(text: str) -> dict[str, Any]:
     return {
         "scenario_id": scenario_id.strip(),
         "title": title.strip(),
-        "interview_note": fields.get("interview_note", ""),
+        "rationale": fields.get("rationale", ""),
         "stop_reason": fields.get("stop_reason", ""),
         "pass": fields.get("result") == "PASS",
         "scores": scores,
@@ -306,7 +306,7 @@ def scenario_listing(scenarios: tuple[Scenario, ...], directory: Path) -> list[d
         item: dict[str, Any] = {
             "id": scenario.id,
             "title": scenario.title,
-            "interview_note": scenario.interview_note,
+            "rationale": scenario.rationale,
         }
         saved = load_result(directory, scenario.id)
         if saved is not None:

@@ -1,270 +1,124 @@
-"""Tests for the agent loop using a fake OpenAI client."""
+"""Exercise the actual Agents SDK runner with a deterministic fake model."""
 
 import json
-from types import SimpleNamespace
-from typing import Any
-
 import pytest
 
-from sierra_agent.agent import AgentLoopError, SierraAgent
-from sierra_agent.policy import DEFAULT_POLICY, PolicyContext
+from fakes import FakeClient, FakeModel, text_response, tool_call, tool_response
+from support_agent.agent import AgentLoopError, SupportAgent
+from support_agent.config import PROJECT_ROOT
+from support_agent.policy import DEFAULT_POLICY
+from support_agent.prompt import EARLY_RISERS_PROMPT, SYSTEM_PROMPT
+from support_agent.tools import HotelTools
 
 
-class FakeResponses:
-    def __init__(self, responses: list[Any]) -> None:
-        self._responses = iter(responses)
-        self.requests: list[dict[str, Any]] = []
-
-    def create(self, **request: Any) -> Any:
-        self.requests.append(request)
-        return next(self._responses)
-
-
-class FakeClient:
-    def __init__(self, responses: list[Any]) -> None:
-        self.responses = FakeResponses(responses)
-
-
-class FakeTools:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, str]] = []
-
-    @property
-    def definitions(self) -> list[dict[str, Any]]:
-        return [
-            {"name": "lookup_reservation"},
-            {"name": "get_available_rooms"},
-            {"name": "check_early_risers_window"},
-            {"name": "create_early_risers_code"},
-        ]
-
-    def execute(self, name: str, arguments: str) -> dict[str, Any]:
-        self.calls.append((name, arguments))
-        return {"ok": True, "tool": name}
-
-
-def text_response(response_id: str, text: str) -> Any:
-    return SimpleNamespace(id=response_id, output=[], output_text=text)
-
-
-def tool_response(response_id: str, *calls: Any) -> Any:
-    return SimpleNamespace(id=response_id, output=list(calls), output_text="")
-
-
-def tool_call(name: str, call_id: str, arguments: str = "{}") -> Any:
-    return SimpleNamespace(
-        type="function_call",
-        name=name,
-        call_id=call_id,
-        arguments=arguments,
-    )
-
-
-def make_agent(
-    responses: list[Any],
-    max_tool_rounds: int = 5,
-) -> tuple[SierraAgent, FakeClient, FakeTools]:
+def make_agent(responses, max_tool_rounds=5):
     client = FakeClient(responses)
-    tools = FakeTools()
-    agent = SierraAgent(
-        client=client,  # type: ignore[arg-type]
-        model="gpt-4o-mini",
-        tools=tools,
-        max_tool_rounds=max_tool_rounds,
-    )
-    return agent, client, tools
+    agent = SupportAgent(client=client, model='openai-test-model',
+                         tools=HotelTools(PROJECT_ROOT / 'data', 'a-test-secret-value'),
+                         sdk_model=FakeModel(client), max_tool_rounds=max_tool_rounds)
+    return agent, client
 
 
-def test_returns_plain_model_response_and_continues_session() -> None:
-    agent, client, _ = make_agent(
-        [
-            text_response("response-1", "Welcome to the trail!"),
-            text_response("response-2", "Onward!"),
-        ]
-    )
-
-    assert agent.reply("Hello") == "Welcome to the trail!"
-    assert agent.reply("Thanks") == "Onward!"
-
-    assert "previous_response_id" not in client.responses.requests[0]
-    assert client.responses.requests[1]["previous_response_id"] == "response-1"
+def test_continues_customer_history_and_passes_model_settings():
+    agent, client = make_agent([text_response('Welcome!', 'r1'), text_response('Enjoy your stay!', 'r2')])
+    assert agent.reply('Hello') == 'Welcome!'
+    assert agent.reply('Thanks') == 'Enjoy your stay!'
+    first, second = client.responses.requests
+    assert first['instructions'] == SYSTEM_PROMPT
+    assert first['reasoning'] == {'effort': 'medium'}
+    assert first['store'] is False
+    assert first['input'] == [{'role': 'user', 'content': 'Hello'}]
+    assert second['input'][-1] == {'role': 'user', 'content': 'Thanks'}
+    assert any('Welcome!' in json.dumps(item) for item in second['input'])
 
 
-def test_adds_early_risers_instructions_only_after_customer_mentions_it() -> None:
-    agent, client, _ = make_agent(
-        [
-            text_response("response-1", "How can I help?"),
-            text_response("response-2", "Here is how the promotion works."),
-            text_response("response-3", "Let me check that for you."),
-        ]
-    )
-
-    agent.reply("Hello")
-    hidden_trace = agent.last_trace
-    agent.reply("How does the Early Risers promotion work?")
-    agent.reply("Can I get a code?")
-
-    requests = client.responses.requests
-    assert "Early Risers Promotion:" not in requests[0]["instructions"]
-    assert "Early Risers Promotion:" in requests[1]["instructions"]
-    assert "Early Risers Promotion:" in requests[2]["instructions"]
-    assert {tool["name"] for tool in requests[0]["tools"]} == {
-        "lookup_reservation",
-        "get_available_rooms",
-    }
-    assert {tool["name"] for tool in requests[1]["tools"]} == {
-        "lookup_reservation",
-        "get_available_rooms",
-        "check_early_risers_window",
-        "create_early_risers_code",
-    }
-    assert requests[2]["tools"] == requests[1]["tools"]
-    assert hidden_trace["early_risers_guard"] == "hidden"
-    assert hidden_trace["promotion_prompt_enabled"] is False
-    assert hidden_trace["exposed_tools"] == [
-        "lookup_reservation",
-        "get_available_rooms",
-    ]
-    assert agent.last_trace["early_risers_guard"] == "enabled"
-    assert agent.last_trace["promotion_prompt_enabled"] is True
+def test_promotion_tools_remain_hidden_until_guest_mentions_promotion():
+    agent, client = make_agent([text_response('Hello'), text_response('Here are the hours'), text_response('Let me check')])
+    agent.reply('Hello')
+    assert agent.last_trace['early_risers_guard'] == 'hidden'
+    agent.reply('How does Early Risers work?')
+    agent.reply('Can I get a code?')
+    assert {t['name'] for t in client.responses.requests[0]['tools']} == {'lookup_reservation', 'get_available_rooms'}
+    assert EARLY_RISERS_PROMPT not in client.responses.requests[0]['instructions']
+    for request in client.responses.requests[1:]:
+        assert EARLY_RISERS_PROMPT in request['instructions']
+        assert 'create_early_risers_code' in {t['name'] for t in request['tools']}
 
 
-def test_executes_tool_and_returns_output_to_model() -> None:
-    call = tool_call(
-        "lookup_reservation",
-        "call-1",
-        '{"email":"hiker@example.com","reservation_number":"#H001"}',
-    )
-    agent, client, tools = make_agent(
-        [
-            tool_response("response-1", call),
-            text_response("response-2", "Your reservation is confirmed."),
-        ]
-    )
+def test_sdk_dispatches_parallel_tools_and_returns_correlated_results():
+    args = {'email': 'morgan.lee@example.com', 'reservation_number': '#H002'}
+    agent, client = make_agent([
+        tool_response('r1', tool_call('lookup_reservation', 'c1', args), tool_call('get_available_rooms', 'c2')),
+        text_response('Your reservation is confirmed.', 'r2')])
+    assert agent.reply('Check my reservation and rooms') == 'Your reservation is confirmed.'
+    inputs = client.responses.requests[1]['input']
+    outputs = [item for item in inputs if item.get('type') == 'function_call_output']
+    assert {item['call_id'] for item in outputs} == {'c1', 'c2'}
+    assert json.loads(outputs[0]['output'])['found'] is True
+    assert agent.last_trace['tool_rounds'] == 1
+    assert [t['outcome'] for t in agent.last_trace['tools']] == ['found', 'completed']
+    trace = json.dumps(agent.last_trace)
+    assert 'morgan.lee@example.com' not in trace
+    assert '#H002' not in trace
 
-    result = agent.reply("Where is my reservation?")
 
-    assert result == "Your reservation is confirmed."
-    assert tools.calls == [("lookup_reservation", call.arguments)]
-    output = client.responses.requests[1]["input"][0]
-    assert output["type"] == "function_call_output"
-    assert output["call_id"] == "call-1"
-    assert '"ok":true' in output["output"]
+def test_rejected_tool_result_is_available_to_model():
+    agent, client = make_agent([tool_response('r1', tool_call('lookup_reservation', 'c1', {'email': 'bad', 'reservation_number': '#H001'})), text_response('Could you double-check both details?')])
+    agent.reply('Check it')
+    outputs = [i for i in client.responses.requests[1]['input'] if i.get('type') == 'function_call_output']
+    assert json.loads(outputs[0]['output'])['ok'] is False
+    assert agent.last_trace['tools'][0]['outcome'] == 'rejected'
+
+
+def test_tool_round_limit_rolls_back_the_failed_turn():
+    agent, client = make_agent([text_response('Welcome', 'r0'), tool_response('r1', tool_call('get_available_rooms', 'c1')), tool_response('r2', tool_call('get_available_rooms', 'c2')), text_response('Try again', 'r3')], max_tool_rounds=1)
+    agent.reply('Hello')
+    with pytest.raises(AgentLoopError, match='tool-call limit'):
+        agent.reply('Keep calling tools')
+    assert agent.last_trace['outcome'] == 'failed'
+    assert len(agent.last_trace['tools']) == 1
+    assert agent.last_trace['tool_rounds'] == 1
+    assert agent.reply('Retry') == 'Try again'
+    inputs = client.responses.requests[-1]['input']
+    assert 'Keep calling tools' not in json.dumps(inputs)
+    assert 'Welcome' in json.dumps(inputs)
+
+
+@pytest.mark.parametrize('response, message', [(text_response('partial', status='incomplete'), 'max_output_tokens'), (text_response('', refusal=True), 'declined'), (text_response(''), 'no text')])
+def test_rejects_incomplete_refused_and_empty_responses(response, message):
+    agent, client = make_agent([response, text_response('Hello')])
+    with pytest.raises(AgentLoopError, match=message):
+        agent.reply('Tell me about Early Risers')
+    agent.reply('Hello')
+    assert EARLY_RISERS_PROMPT not in client.responses.requests[-1]['instructions']
+    assert client.responses.requests[-1]['input'] == [{'role': 'user', 'content': 'Hello'}]
+
+
+def test_policy_rewrite_has_no_tools_and_preserves_promotion_guidance():
+    agent, client = make_agent([text_response("I'll contact a manager and refund your booking.", 'r1'), text_response('I can check your reservation.', 'r2'), text_response('Welcome back', 'r3')])
+    assert agent.reply('Early Risers and refund help please') == 'I can check your reservation.'
+    rewrite = client.responses.requests[1]
+    assert rewrite['tool_choice'] == 'none'
+    assert rewrite['tools'] == []
+    assert EARLY_RISERS_PROMPT in rewrite['instructions']
+    assert agent.last_trace['response_policy'] == 'rewritten'
+    agent.reply('Thanks')
+    history = json.dumps(client.responses.requests[-1]['input'])
+    assert 'contact a manager' not in history
+    assert 'I can check your reservation.' in history
+
+
+def test_safe_fallback_replaces_both_unsafe_drafts():
+    agent, client = make_agent([text_response('I will cancel your booking.', 'r1'), text_response("I've contacted staff.", 'r2'), text_response('Hello', 'r3')])
+    assert agent.reply('Cancel it') == DEFAULT_POLICY.fallback
+    assert agent.last_trace['response_policy'] == 'fallback'
+    agent.reply('Hello')
+    assert client.responses.requests[-1]['input'] == [{'role': 'user', 'content': 'Cancel it'}, {'role': 'assistant', 'content': DEFAULT_POLICY.fallback}, {'role': 'user', 'content': 'Hello'}]
+
+
+def test_trace_returns_detached_tool_records():
+    agent, _ = make_agent([tool_response('r1', tool_call('get_available_rooms', 'c1')), text_response('Here are the rooms')])
+    agent.reply('Rooms please')
     trace = agent.last_trace
-    assert trace["outcome"] == "completed"
-    assert trace["tools"] == [{"name": "lookup_reservation", "outcome": "completed"}]
-    assert isinstance(trace["duration_ms"], int)
-    assert call.arguments not in json.dumps(trace)
-
-
-def test_handles_multiple_tool_calls_from_one_response() -> None:
-    first = tool_call("lookup_reservation", "call-1")
-    second = tool_call("get_available_rooms", "call-2")
-    agent, client, tools = make_agent(
-        [
-            tool_response("response-1", first, second),
-            text_response("response-2", "Here are both answers."),
-        ]
-    )
-
-    agent.reply("Check my reservation and recommend a room.")
-
-    assert [name for name, _ in tools.calls] == [
-        "lookup_reservation",
-        "get_available_rooms",
-    ]
-    assert len(client.responses.requests[1]["input"]) == 2
-
-
-def test_failed_tool_loop_keeps_last_successful_session_checkpoint() -> None:
-    agent, client, _ = make_agent(
-        [
-            text_response("response-1", "Welcome to the trail!"),
-            tool_response("response-2", tool_call("lookup_reservation", "call-1")),
-            tool_response("response-3", tool_call("lookup_reservation", "call-2")),
-            text_response("response-4", "Let's try that again."),
-        ],
-        max_tool_rounds=1,
-    )
-
-    agent.reply("Hello")
-
-    with pytest.raises(AgentLoopError, match="tool-call limit"):
-        agent.reply("Keep calling tools.")
-
-    assert agent.last_trace["outcome"] == "failed"
-    assert agent.last_trace["error"] == "AgentLoopError"
-    assert agent.reply("Retry my request") == "Let's try that again."
-    assert client.responses.requests[-1]["previous_response_id"] == "response-1"
-
-
-def test_rewrites_an_unsupported_capability_promise() -> None:
-    unsafe = "I'll escalate this to a manager and keep you updated."
-    corrected = "I can check a reservation’s status or help with available rooms."
-    agent, client, _ = make_agent(
-        [
-            text_response("response-1", unsafe),
-            text_response("response-2", corrected),
-        ]
-    )
-
-    assert agent.reply("Please escalate my refund.") == corrected
-    rewrite_request = client.responses.requests[1]
-    assert rewrite_request["previous_response_id"] == "response-1"
-    assert rewrite_request["tool_choice"] == "none"
-    assert "Remove unsupported commitments" in rewrite_request["instructions"]
-    assert "Early Risers Promotion:" not in rewrite_request["instructions"]
-    assert agent.last_trace["response_policy"] == "rewritten"
-    assert unsafe not in json.dumps(agent.last_trace)
-
-
-def test_keeps_early_risers_enabled_during_a_policy_rewrite() -> None:
-    agent, client, _ = make_agent(
-        [
-            text_response("response-1", "I will process your refund."),
-            text_response("response-2", "I can explain the promotion."),
-        ]
-    )
-
-    assert (
-        agent.reply("Tell me about Early Risers and refund my reservation.")
-        == "I can explain the promotion."
-    )
-
-    rewrite_request = client.responses.requests[1]
-    assert "Early Risers Promotion:" in rewrite_request["instructions"]
-    assert {
-        tool["name"] for tool in rewrite_request["tools"]
-    } >= {
-        "check_early_risers_window",
-        "create_early_risers_code",
-    }
-
-
-def test_returns_safe_fallback_when_rewrite_remains_unsafe() -> None:
-    agent, client, _ = make_agent(
-        [
-            text_response("response-1", "I will process your refund."),
-            text_response("response-2", "I've contacted a manager for you."),
-            text_response("response-3", "How can I help?"),
-        ]
-    )
-
-    assert agent.reply("Refund my reservation.") == DEFAULT_POLICY.fallback
-    assert agent.last_trace["response_policy"] == "fallback"
-    assert agent.reply("What can you do?") == "How can I help?"
-    assert "previous_response_id" not in client.responses.requests[-1]
-
-
-def test_flags_off_catalog_recommendations() -> None:
-    context = PolicyContext(
-        room_names={"Garden King Room"}
-    )
-    assert DEFAULT_POLICY.find_violations(
-        "I recommend Marriott for your hike.",
-        context,
-    ) == ("off_catalog_recommendation",)
-    assert DEFAULT_POLICY.find_violations(
-        "I recommend Garden King Room for your hike.",
-        context,
-    ) == ()
+    trace['tools'][0]['name'] = 'changed'
+    assert agent.last_trace['tools'][0]['name'] == 'get_available_rooms'

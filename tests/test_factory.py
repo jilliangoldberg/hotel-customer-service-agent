@@ -1,52 +1,30 @@
-"""Composition-root tests."""
+"""Verify the shared composition root and configured OpenAI model."""
 
-from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
-
-import pytest
-
-from sierra_agent import factory
-from sierra_agent.config import PROJECT_ROOT, Settings
+from fakes import FakeClient, FakeModel, text_response
+from support_agent import factory
+from support_agent.agent import SupportAgent
+from support_agent.config import PROJECT_ROOT, Settings
 
 
-class FakeResponses:
-    def __init__(self) -> None:
-        self.requests: list[dict[str, Any]] = []
-
-    def create(self, **request: Any) -> Any:
-        self.requests.append(request)
-        return SimpleNamespace(
-            id="response-1",
-            output=[],
-            output_text="Hello from Sierra.",
-        )
-
-
-class FakeClient:
-    def __init__(self) -> None:
-        self.responses = FakeResponses()
-
-
-def test_build_agent_composes_configured_model_and_registered_tools(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    client = FakeClient()
-    monkeypatch.setattr(factory, "OpenAI", lambda **_kwargs: client)
-    settings = Settings(
-        openai_api_key="test-key",
-        openai_model="agent-model",
-        openai_eval_model="judge-model",
-        promotion_secret="a-valid-promotion-secret",
-        data_dir=Path(PROJECT_ROOT / "data"),
-    )
-
+def test_build_agent_composes_configured_model_and_registered_tools(monkeypatch):
+    client = FakeClient([text_response('Hello from Trailhead Hotel.')])
+    keys = []
+    def make_client(**kwargs):
+        keys.append(kwargs['api_key'])
+        return client
+    monkeypatch.setattr(factory, 'OpenAI', make_client)
+    def make_agent(**kwargs):
+        model = FakeModel(client)
+        model.name = kwargs['model']
+        return SupportAgent(**kwargs, sdk_model=model)
+    monkeypatch.setattr(factory, 'SupportAgent', make_agent)
+    settings = Settings(api_key='test-key', agent_model='agent-model',
+                        eval_model='judge-model', agent_effort='low',
+                        promotion_secret='a-valid-promotion-secret', data_dir=PROJECT_ROOT / 'data')
     agent = factory.build_agent(settings)
-
-    assert agent.reply("Hello") == "Hello from Sierra."
+    assert agent.reply('Hello') == 'Hello from Trailhead Hotel.'
+    assert keys == ['test-key']
     request = client.responses.requests[0]
-    assert request["model"] == "agent-model"
-    assert {tool["name"] for tool in request["tools"]} == {
-        "lookup_reservation",
-        "get_available_rooms",
-    }
+    assert request['model'] == 'agent-model'
+    assert request['reasoning'] == {'effort': 'low'}
+    assert {t['name'] for t in request['tools']} == {'lookup_reservation', 'get_available_rooms'}

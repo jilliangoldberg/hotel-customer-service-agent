@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from sierra_agent.tools import PACIFIC_TIME, HotelTools
+from support_agent.tools import PACIFIC_TIME, HotelTools
 
 
 ORDERS = [
@@ -262,17 +262,17 @@ def test_promotion_code_requires_token_from_prior_window_check(
 def test_dispatch_rejects_unknown_or_malformed_calls(tmp_path: Path) -> None:
     tools = make_tools(tmp_path)
 
-    unknown = tools.execute("missing_tool", "{}")
+    unknown = tools.execute("missing_tool", {})
     assert unknown["error"] == "unknown_tool"
     assert "lookup_reservation" in unknown["hint"]
 
-    malformed = tools.execute("lookup_reservation", "not-json")
+    malformed = tools.execute("lookup_reservation", "not-a-dict")
     assert malformed["error"] == "invalid_tool_arguments"
     assert "required fields" in malformed["hint"]
 
     invalid_types = tools.execute(
         "lookup_reservation",
-        '{"email":["not","a","string"],"reservation_number":1}',
+        {"email": ["not", "a", "string"], "reservation_number": 1},
     )
     assert invalid_types["error"] == "invalid_reservation_details"
     assert "hint" in invalid_types
