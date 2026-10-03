@@ -24,7 +24,7 @@ class OutputRule:
 
 DEFAULT_CAPABILITIES = (
     Capability("reservation_status", "check a reservation’s status"),
-    Capability("room_recommendations", "suggest available Trailhead rooms"),
+    Capability("room_recommendations", "suggest available Pixel Hotel rooms"),
     Capability("early_risers", "help with the Early Risers Promotion"),
 )
 

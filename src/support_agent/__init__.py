@@ -1,1 +1,1 @@
-"""Trailhead Hotel support agent."""
+"""Pixel Hotel support agent."""

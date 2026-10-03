@@ -75,7 +75,7 @@ def test_initial_and_reset_greetings_list_supported_options(
 ) -> None:
     browser = client_factory()
     page = browser.get("/").get_data(as_text=True)
-    greeting = "Welcome to Trailhead Hotel! Ask me about a reservation or rooms. 🛎️"
+    greeting = "Welcome to Pixel Hotel! Ask me about a reservation or rooms. 🛎️"
 
     assert page.count(greeting) == 2
     assert "Ask me about a reservation, rooms, or the Early Risers promo." not in page

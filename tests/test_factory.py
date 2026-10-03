@@ -7,7 +7,7 @@ from support_agent.config import PROJECT_ROOT, Settings
 
 
 def test_build_agent_composes_configured_model_and_registered_tools(monkeypatch):
-    client = FakeClient([text_response('Hello from Trailhead Hotel.')])
+    client = FakeClient([text_response('Hello from Pixel Hotel.')])
     keys = []
     def make_client(**kwargs):
         keys.append(kwargs['api_key'])
@@ -22,7 +22,7 @@ def test_build_agent_composes_configured_model_and_registered_tools(monkeypatch)
                         eval_model='judge-model', agent_effort='low',
                         promotion_secret='a-valid-promotion-secret', data_dir=PROJECT_ROOT / 'data')
     agent = factory.build_agent(settings)
-    assert agent.reply('Hello') == 'Hello from Trailhead Hotel.'
+    assert agent.reply('Hello') == 'Hello from Pixel Hotel.'
     assert keys == ['test-key']
     request = client.responses.requests[0]
     assert request['model'] == 'agent-model'

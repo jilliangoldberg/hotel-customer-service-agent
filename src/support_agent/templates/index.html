@@ -3,208 +3,157 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Trailhead Hotel</title>
+    <title>Pixel Hotel</title>
     <style>
-      :root {
-        --pine: #234636;
-        --moss: #3f6b52;
-        --canvas: #f4e6c8;
-        --paper: #fffaf0;
-        --trail: #c45c26;
-        --ink: #243126;
-        --pass: #2f6f45;
-        --fail: #a33b1f;
-      }
+      :root { --ink: #454341; --muted: #79766f; --paper: #fffefb; --peach: #f7c3ad; --sage: #e8eee4; --line: #e4e2da; --pass: #58795c; --fail: #ae4d48; }
       * { box-sizing: border-box; }
-      html, body {
-        margin: 0;
-        min-height: 100vh;
-        background: var(--canvas);
-      }
-      body {
-        font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-        color: var(--ink);
-      }
-      .sky {
-        background-color: #cfe3c4;
-        background-image: linear-gradient(#87b5c9, #9ebfbc);
-        background-repeat: no-repeat;
-        background-size: 100% calc(100% - 20px);
-        padding: 24px 16px 32px;
-      }
-      .sky header,
-      main {
-        max-width: 640px;
-        margin: 0 auto;
-      }
-      body.is-developer .sky header,
-      main.is-developer { max-width: 760px; }
-      main { padding: 16px 16px 32px; }
-      header {
-        text-align: center;
-        color: var(--pine);
-      }
-      header h1 {
-        margin: 0;
-        font-size: 2rem;
-      }
-      header p {
-        margin: 6px 0 0;
-        font-style: italic;
-      }
-      .mode-toggle {
-        display: inline-flex;
-        margin: 14px 0 0;
-        padding: 4px;
-        border: 2px solid var(--pine);
-        border-radius: 999px;
-        background: var(--paper);
-      }
-      .mode-toggle button {
-        border: 0;
-        background: transparent;
-        color: var(--pine);
-        padding: 8px 16px;
-        border-radius: 999px;
-      }
-      .mode-toggle button.is-active {
-        background: var(--pine);
-        color: white;
-      }
+      html, body { margin: 0; min-height: 100%; background: #f7f6f0; }
+      body { color: var(--ink); font: 15px/1.5 "Avenir Next", "Segoe UI", sans-serif; }
+      button, input { font: inherit; }
+      button { cursor: pointer; }
+      button:disabled { opacity: .55; cursor: wait; }
+      button, input { -webkit-tap-highlight-color: transparent; }
+      button:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid #789684; outline-offset: 4px; }
+      .sky { padding: 28px 40px 0; }
+      header { max-width: 1080px; margin: auto; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+      .brand { display: flex; align-items: center; gap: 12px; }
+      .brand-icon { width: 36px; height: 36px; }
+      header h1 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -.5px; }
+      header p { margin: 0; color: var(--muted); font-size: 11px; letter-spacing: 1.7px; text-transform: uppercase; }
+      .mode-toggle { display: inline-flex; padding: 4px; gap: 3px; border: 1px solid var(--line); background: #efeee7; border-radius: 10px; }
+      .mode-toggle button { border: 0; color: var(--muted); background: transparent; padding: 7px 14px; border-radius: 7px; font-size: 12px; }
+      .mode-toggle button.is-active { color: var(--ink); background: var(--paper); box-shadow: 0 1px 3px #45434112; }
+      main { max-width: 1080px; margin: 50px auto 28px; padding: 0 0 24px; display: grid; grid-template-columns: 1fr 1.32fr; gap: 50px; align-items: center; }
+      .hotel-story { padding: 0 20px 0 0; }
+      .eyebrow { font: 11px/1.4 "Courier New", monospace; text-transform: uppercase; letter-spacing: 2px; color: var(--muted); }
+      .hotel-story h2 { margin: 14px 0; font-size: clamp(32px, 3.5vw, 44px); font-weight: 600; line-height: 1.13; letter-spacing: -1.8px; }
+      .hotel-story .intro { max-width: 330px; color: var(--muted); font-size: 14px; line-height: 1.7; }
+      .hotel-scene { width: 100%; max-width: 370px; display: block; margin: 20px auto 0; image-rendering: pixelated; }
+      .scene-caption { text-align: center; color: var(--muted); font: 10px "Courier New", monospace; letter-spacing: 1px; margin-top: 8px; }
       .panel[hidden] { display: none !important; }
-      #log, #eval-log {
-        background: var(--paper);
-        border: 3px solid var(--pine);
-        border-radius: 18px;
-        min-height: 360px;
-        max-height: 60vh;
-        overflow-y: auto;
-        padding: 16px;
-        box-shadow: 6px 6px 0 var(--moss);
-      }
-      .msg {
-        max-width: 85%;
-        margin: 10px 0;
-        padding: 10px 12px;
-        border-radius: 16px;
-        line-height: 1.4;
-        white-space: pre-wrap;
-      }
-      .you {
-        margin-left: auto;
-        background: #f3d7b3;
-      }
-      .agent { background: #d7eadb; }
-      .error { background: #f3d0c4; }
-      form {
-        display: flex;
-        gap: 8px;
-        margin-top: 14px;
-      }
-      input, button, select {
-        font: inherit;
-        border-radius: 999px;
-        border: 2px solid var(--pine);
-        padding: 10px 14px;
-      }
-      input, select { flex: 1; background: var(--paper); }
-      button {
-        background: var(--trail);
-        color: white;
-        cursor: pointer;
-      }
-      button:disabled { opacity: 0.6; cursor: wait; }
-      #new-trail {
-        display: block;
-        margin: 10px auto 0;
-        background: var(--pine);
-      }
-      #trace {
-        margin-top: 16px;
-        color: var(--pine);
-      }
-      #trace pre, #eval-judge {
-        margin: 8px 0 0;
-        padding: 10px;
-        border-radius: 10px;
-        background: var(--paper);
-        font: 0.85rem/1.4 monospace;
-        white-space: pre-wrap;
-      }
-      #eval-judge { font-family: inherit; line-height: 1.45; }
-      #eval-judge:empty,
-      #eval-tools:empty,
-      #eval-meta:empty { display: none; }
-      .eval-toolbar {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 12px;
-      }
-      .eval-toolbar button.scenario {
-        background: var(--paper);
-        color: var(--pine);
-      }
-      .eval-toolbar button.scenario.is-active {
-        background: var(--pine);
-        color: white;
-      }
-      .badge {
-        display: inline-block;
-        margin-left: 6px;
-        padding: 1px 7px;
-        border-radius: 999px;
-        font-size: 0.75rem;
-        color: white;
-      }
-      .badge-pass { background: var(--pass); }
-      .badge-fail { background: var(--fail); }
-      #eval-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        align-items: center;
-        margin: 0 0 12px;
-        color: var(--pine);
-      }
-      #eval-meta strong { font-size: 1.05rem; }
+      #customer-view { border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: 0 10px 40px #6b655308; overflow: hidden; }
+      .desk-header { display: flex; align-items: center; gap: 12px; padding: 20px 24px; border-bottom: 1px solid var(--line); }
+      .desk-avatar { display: grid; place-items: center; width: 40px; height: 40px; background: #fff0dd; border-radius: 10px; }
+      .desk-avatar svg { width: 26px; height: 26px; }
+      .desk-header h3 { font-size: 14px; margin: 0; font-weight: 650; }
+      .desk-header p { margin: 2px 0 0; color: var(--muted); font-size: 11px; }
+      .status-dot { display: inline-block; width: 5px; height: 5px; background: #7c9b78; margin-right: 5px; vertical-align: middle; }
+      .desk-number { margin-left: auto; font: 10px "Courier New", monospace; color: #a6a39b; }
+      #log { height: 330px; overflow-y: auto; padding: 22px 24px; scrollbar-width: thin; scrollbar-color: #deddd3 transparent; }
+      .chat-date { text-align: center; margin: 0 0 24px; font: 10px "Courier New", monospace; color: #a6a39b; letter-spacing: 1px; }
+      .msg { max-width: 88%; margin: 0 0 16px; padding: 13px 16px; font-size: 13px; line-height: 1.65; border-radius: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+      .agent { background: var(--sage); border-bottom-left-radius: 3px; }
+      .you { margin-left: auto; background: #ffe6d8; border-bottom-right-radius: 3px; }
+      .error { background: #fbe6e1; }
+      .msg a { color: #49684e; text-underline-offset: 3px; }
+      .suggestions { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 24px 18px; }
+      .suggestions button { color: #777166; background: transparent; border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; font-size: 11px; transition: background .15s; }
+      .suggestions button:hover { background: #fff1e4; border-color: #e9cbb6; }
+      .composer { border-top: 1px solid var(--line); padding: 18px 24px 14px; }
+      #chat-form { display: flex; align-items: center; gap: 10px; background: #f7f6f1; border: 1px solid var(--line); padding: 5px; border-radius: 9px; }
+      #message { width: 100%; min-width: 0; border: 0; background: transparent; padding: 9px 8px; color: var(--ink); font-size: 12px; }
+      #message::placeholder { color: #a09b91; }
+      #chat-form button { border: 0; background: var(--peach); color: #5d463b; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 6px; font-size: 20px; }
+      #chat-form button:hover { background: #f1b89e; }
+      .composer-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; }
+      .composer-footer span { color: #a09b91; font-size: 10px; }
+      #new-chat { border: 0; background: transparent; color: var(--muted); font-size: 10px; padding: 2px 0; text-decoration: underline; text-underline-offset: 3px; }
+      .site-footer { max-width: 1080px; margin: 0 auto; padding: 0 0 28px; display: flex; justify-content: space-between; color: #a09b91; font: 10px "Courier New", monospace; letter-spacing: .5px; }
+      .site-footer .pixel-heart { color: #c88c78; }
+      main.is-developer { grid-template-columns: 1fr; max-width: 920px; margin-top: 36px; }
+      body.is-developer .hotel-story { display: none; }
+      #developer-view { min-width: 0; }
+      #eval-log { background: var(--paper); border: 1px solid var(--line); border-radius: 12px; min-height: 300px; max-height: 55vh; overflow-y: auto; padding: 20px; }
+      #trace { margin: 0 0 20px; font-size: 12px; }
+      #trace pre, #eval-judge { margin: 8px 0; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: var(--paper); white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.6 monospace; }
+      #eval-judge { font-family: inherit; }
+      #eval-judge:empty, #eval-tools:empty, #eval-meta:empty { display: none; }
+      .eval-toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+      .eval-toolbar button { border: 1px solid var(--line); background: var(--paper); color: var(--ink); border-radius: 7px; padding: 8px 12px; font-size: 12px; }
+      .eval-toolbar button.is-active, #run-eval { background: var(--sage); border-color: #bdcdb7; }
+      .badge { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; font-size: 9px; color: white; }
+      .badge-pass { background: var(--pass); } .badge-fail { background: var(--fail); }
+      #eval-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; font-size: 13px; }
       .score-pills { display: flex; flex-wrap: wrap; gap: 6px; }
-      .score-pills span {
-        background: var(--paper);
-        border: 2px solid var(--moss);
-        border-radius: 999px;
-        padding: 4px 10px;
-        font-size: 0.85rem;
-      }
-      #eval-tools {
-        margin: 10px 0 0;
-        color: var(--pine);
-        font-size: 0.9rem;
-      }
-      #run-eval { background: var(--pine); }
-    </style>
-  </head>
+      .score-pills span { background: var(--sage); border-radius: 5px; padding: 3px 7px; font-size: 11px; }
+      #eval-tools { font-size: 12px; color: var(--muted); }
+      @media (max-width: 1140px) { main { margin-left: 32px; margin-right: 32px; gap: 32px; } .site-footer { padding-left: 32px; padding-right: 32px; } }
+      @media (max-width: 720px) { .sky { padding: 20px 20px 0; } main { display: block; margin: 28px 20px 20px; } .hotel-story { padding: 0; text-align: center; } .hotel-story h2 { font-size: 30px; letter-spacing: -1px; margin: 8px 0; } .hotel-story .intro { margin: 10px auto; } .hotel-scene { max-width: 230px; margin: 0 auto; } .scene-caption { margin: 0 0 24px; } .site-footer { padding: 0 20px 24px; } #log { height: 290px; } }
+      @media (max-width: 420px) { header { align-items: flex-start; gap: 10px; } .brand { gap: 7px; } .brand-icon { width: 28px; } header h1 { font-size: 14px; } header p { font-size: 9px; letter-spacing: 1px; } .mode-toggle button { padding: 6px 8px; font-size: 10px; } .desk-header, #log { padding: 18px; } .composer { padding: 14px 18px; } .suggestions { padding-left: 18px; padding-right: 18px; } .desk-number { display: none; } }
+    </style>  </head>
   <body>
     <div class="sky">
       <header>
-        <h1>🏨 Trailhead Hotel</h1>
-        <p id="tagline">A welcoming stay starts here.</p>
-        <div class="mode-toggle">
-          <button type="button" id="mode-customer" class="is-active">Customer</button>
-          <button type="button" id="mode-developer">Developer</button>
+        <div class="brand">
+          <svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true" shape-rendering="crispEdges"><path d="M6 6h12v2h2v12H4V8h2z" fill="#efb39d"/><path d="M8 3h8v3H8z" fill="#93a48c"/><path d="M8 10h3v3H8zm5 0h3v3h-3zM10 16h4v4h-4z" fill="#fff5d6"/></svg>
+          <div><h1>Pixel Hotel</h1><p>Make yourself at home</p></div>
+        </div>
+        <div class="mode-toggle" aria-label="View">
+          <button type="button" id="mode-customer" class="is-active" aria-pressed="true">Guest chat</button>
+          <button type="button" id="mode-developer" aria-pressed="false">Developer</button>
         </div>
       </header>
     </div>
     <main id="shell">
-      <section id="customer-view" class="panel">
-        <div id="log">
-          <div class="msg agent">Welcome to Trailhead Hotel! Ask me about a reservation or rooms. 🛎️</div>
+      <aside class="hotel-story">
+        <div class="eyebrow">Guest services</div>
+        <h2>Welcome to the pixel hotel!</h2>
+        <p class="intro" id="tagline">how may we help?</p>
+        <svg class="hotel-scene" viewBox="0 0 180 155" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="hotel-title" shape-rendering="crispEdges">
+          <title id="hotel-title">A tiny peach hotel with warm windows, a striped awning, and a guest at the door</title>
+          <path d="M17 41h5v-5h16v5h7v5H17zm115-16h5v-5h15v5h8v5h-28z" fill="#fffefb"/>
+          <path d="M150 42h9v9h-9z" fill="#ecd78c"/>
+          <path d="M18 137h145v4H18z" fill="#ddded0"/>
+          <path d="M22 141h139v3H22z" fill="#e9e8df"/>
+          <path d="M44 40h90v95H44z" fill="#e5a48d"/>
+          <path d="M49 38h80v96H49z" fill="#f4c2ab"/>
+          <path d="M44 35h90v5H44zM50 30h78v5H50z" fill="#d8937c"/>
+          <path d="M69 19h42v12H69z" fill="#fff6d9"/>
+          <text x="90" y="27" text-anchor="middle" font-size="5" font-family="monospace" letter-spacing="1" fill="#99735f">PIXEL</text>
+          <path d="M58 49h15v20H58zm25 0h15v20H83zm25 0h15v20h-15zM58 78h15v20H58zm25 0h15v20H83zm25 0h15v20h-15z" fill="#bb806e"/>
+          <path d="M60 51h11v15H60zm25 0h11v15H85zm25 0h11v15h-11zM60 80h11v15H60zm25 0h11v15H85zm25 0h11v15h-11z" fill="#fff0bb"/>
+          <path d="M65 51h2v15h-2zm25 0h2v15h-2zm25 0h2v15h-2zM65 80h2v15h-2zm25 0h2v15h-2zm25 0h2v15h-2zM60 58h11v2H60zm25 0h11v2H85zm25 0h11v2h-11zM60 87h11v2H60zm25 0h11v2H85zm25 0h11v2h-11z" fill="#ddba91"/>
+          <path d="M56 68h19v3H56zm25 0h19v3H81zm25 0h19v3h-19zM56 97h19v3H56zm25 0h19v3H81zm25 0h19v3h-19z" fill="#e6aa90"/>
+          <path d="M55 105h69v8H55z" fill="#fff7e4"/>
+          <path d="M55 105h9v8h-9zm18 0h9v8h-9zm18 0h9v8h-9zm18 0h9v8h-9z" fill="#c87865"/>
+          <path d="M55 113h69v3H55z" fill="#dca18b"/>
+          <path d="M77 116h25v19H77z" fill="#8e9a82"/>
+          <path d="M80 118h8v16h-8zm11 0h8v16h-8z" fill="#d9e4ce"/>
+          <path d="M86 126h1v2h-1zm6 0h1v2h-1z" fill="#7b856f"/>
+          <path d="M74 135h31v3H74z" fill="#c1bbaa"/>
+          <path d="M54 120h14v12H54zm57 0h14v12h-14z" fill="#fff0bb"/>
+          <path d="M29 126h9v12h-9zm110 0h9v12h-9z" fill="#c99a7b"/>
+          <path d="M27 117h13v9H27zm3-5h7v5h-7zM137 117h13v9h-13zm3-5h7v5h-7z" fill="#9bac88"/>
+          <path d="M115 133h7v5h-7zm2-7h5v7h-5z" fill="#e4b199"/>
+          <path d="M116 124h6v3h-6z" fill="#655b51"/>
+          <path d="M114 133h9v8h-9z" fill="#a7b6aa"/>
+          <path d="M115 141h2v3h-2zm5 0h2v3h-2z" fill="#655b51"/>
+          <path d="M126 136h5v7h-5z" fill="#d7ba7c"/>
+          <path d="M127 134h3v2h-3z" fill="#8a7a5c"/>
+        </svg>
+        <p class="scene-caption">your home away from home.</p>
+      </aside>
+      <section id="customer-view" class="panel" aria-label="Guest chat">
+        <div class="desk-header">
+          <div class="desk-avatar"><svg viewBox="0 0 24 24" aria-hidden="true" shape-rendering="crispEdges"><path d="M11 5h2v3h-2zM8 9h8v2H8zm-2 2h12v6H6zM4 18h16v2H4z" fill="#b78d55"/><path d="M9 11h2v5H9z" fill="#efd394"/></svg></div>
+          <div><h3>The front desk</h3><p><span class="status-dot"></span>Here to help with your stay</p></div>
+          <span class="desk-number">NO. 001</span>
         </div>
-        <form id="chat-form">
-          <input id="message" type="text" autocomplete="off" placeholder="How can we help with your stay?" />
-          <button type="submit">Send 🛏️</button>
-        </form>
-        <button id="new-trail" type="button">Start a new chat</button>
+        <div id="log" role="log" aria-live="polite" aria-label="Conversation">
+          <p class="chat-date">YOU’VE ARRIVED</p>
+          <div class="msg agent">Welcome to Pixel Hotel! Ask me about a reservation or rooms. 🛎️</div>
+        </div>
+        <div class="suggestions" aria-label="Conversation starters">
+          <button type="button" data-message="Can you help me check my reservation?">Find my reservation</button>
+          <button type="button" data-message="What rooms are available?">Explore the rooms</button>
+        </div>
+        <div class="composer">
+          <form id="chat-form">
+            <input id="message" type="text" aria-label="Message the front desk" autocomplete="off" placeholder="Type your message…" />
+            <button type="submit" aria-label="Send message">↑</button>
+          </form>
+          <div class="composer-footer"><span>Guest support</span><button id="new-chat" type="button">New conversation</button></div>
+        </div>
       </section>
 
       <section id="developer-view" class="panel" hidden>
@@ -224,6 +173,7 @@
         </form>
       </section>
     </main>
+    <footer class="site-footer"><span>PIXEL HOTEL · STAY AWHILE</span><span class="pixel-heart" aria-label="Made with love">♥</span></footer>
     <script>
       const shell = document.getElementById("shell");
       const tagline = document.getElementById("tagline");
@@ -246,10 +196,28 @@
 
       let selectedScenario = "";
 
+      function escapeHtml(text) {
+        return text.replace(/[&<>"']/g, (c) => ({
+          "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+        })[c]);
+      }
+
+      // Minimal Markdown for agent replies: **bold**, [text](url), bare URLs.
+      // Text is escaped first, so model output can never inject HTML.
+      function renderMarkdown(text) {
+        const link = (url, label) =>
+          `<a href="${url}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+        return escapeHtml(text)
+          .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+          .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (_, label, url) => link(url, label))
+          .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, (_, lead, url) => lead + link(url, url));
+      }
+
       function addMsg(target, role, text) {
         const div = document.createElement("div");
         div.className = "msg " + role;
-        div.textContent = text;
+        if (role === "agent") div.innerHTML = renderMarkdown(text);
+        else div.textContent = text;
         target.appendChild(div);
         target.scrollTop = target.scrollHeight;
       }
@@ -262,9 +230,11 @@
         developerView.hidden = !developer;
         modeCustomer.classList.toggle("is-active", !developer);
         modeDeveloper.classList.toggle("is-active", developer);
+        modeCustomer.setAttribute("aria-pressed", String(!developer));
+        modeDeveloper.setAttribute("aria-pressed", String(developer));
         tagline.textContent = developer
           ? "Simulated eval — transcripts and scores"
-          : "A welcoming stay starts here.";
+          : "how may we help?";
         if (developer) loadScenarios();
       }
 
@@ -361,6 +331,13 @@
       modeCustomer.addEventListener("click", () => setMode("customer"));
       modeDeveloper.addEventListener("click", () => setMode("developer"));
 
+      document.querySelectorAll("[data-message]").forEach((button) => {
+        button.addEventListener("click", () => {
+          input.value = button.dataset.message;
+          input.focus();
+        });
+      });
+
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const text = input.value.trim();
@@ -375,7 +352,7 @@
             body: JSON.stringify({ message: text }),
           });
           const data = await res.json();
-          addMsg(log, "agent", data.reply || "Hmm, that path went quiet. Try again?");
+          addMsg(log, "agent", data.reply || "The front desk is quiet. Try again?");
           showTrace(data.trace);
         } catch {
           addMsg(log, "agent", "The guest desk connection failed. Please try again in a moment.");
@@ -385,10 +362,10 @@
         input.focus();
       });
 
-      document.getElementById("new-trail").addEventListener("click", async () => {
+      document.getElementById("new-chat").addEventListener("click", async () => {
         await fetch("/reset", { method: "POST" });
         log.innerHTML = "";
-        addMsg(log, "agent", "Welcome to Trailhead Hotel! Ask me about a reservation or rooms. 🛎️");
+        addMsg(log, "agent", "Welcome to Pixel Hotel! Ask me about a reservation or rooms. 🛎️");
         showTrace(null);
         input.focus();
       });

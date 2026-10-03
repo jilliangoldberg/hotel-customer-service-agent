@@ -1,12 +1,23 @@
-# Hotel Customer Service Agent
+# Pixel Hotel
 
-A small guest support app for **Trailhead Hotel**, a fictional hotel used to
-explore the [OpenAI Agents SDK](https://developers.openai.com/api/docs/guides/agents/sdk),
+A guest support app for **Pixel Hotel**, a fictional hotel with a minimalist
+pixel-art chat interface, built with the [OpenAI Agents SDK](https://developers.openai.com/api/docs/guides/agents/sdk),
 deterministic tools, response safety checks, and simulated customer evaluations.
 
 It can check an existing reservation, recommend rooms from a sample catalog,
 and issue an Early Risers Promotion code during a verified morning window.
 The terminal and Flask chat share the same agent and tools.
+
+## Preview
+
+The guest chat welcomes visitors with “Welcome to the pixel hotel!” and
+“how may we help?”. A pixel hotel illustration, soft peach and sage colors,
+and conversation starters make it easy to ask about reservations and rooms.
+The Developer view provides evaluation scenarios and saved transcripts.
+
+![Pixel Hotel guest chat](docs/screenshots/pixel-hotel-guest.jpg)
+
+![Pixel Hotel evaluation scenarios](docs/screenshots/pixel-hotel-developer.jpg)
 
 ## Setup
 
@@ -46,9 +57,9 @@ Local web chat:
 python -m support_agent.web
 ```
 
-Open [http://127.0.0.1:5050](http://127.0.0.1:5050). The Customer view offers guest
-chat. The Developer view runs evaluations and shows transcripts, scores, and
-redacted execution traces. Chat and evaluations use billable OpenAI API calls.
+Open [http://127.0.0.1:5050](http://127.0.0.1:5050). The Guest chat view offers
+conversation starters for reservations and rooms. The Developer view runs
+evaluations and shows transcripts, scores, and redacted execution traces. Chat and evaluations use billable OpenAI API calls.
 
 ## Supported requests
 

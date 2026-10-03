@@ -1,4 +1,4 @@
-"""Terminal entry point for the Trailhead Hotel agent."""
+"""Terminal entry point for the Pixel Hotel agent."""
 
 import sys
 
@@ -19,7 +19,7 @@ def main() -> int:
         print(f"Setup error: {error}", file=sys.stderr)
         return 1
 
-    print("Trailhead Hotel Agent 🏨")
+    print("Pixel Hotel Agent 🏨")
     print("Ask a question, or type 'exit' to end the chat.")
 
     while True:

@@ -155,7 +155,7 @@ class SupportAgent:
             )
 
         sdk_agent = Agent(
-            name="Trailhead Hotel Guest Support",
+            name="Pixel Hotel Guest Support",
             instructions=instructions,
             model=model,
             tools=[sdk_tool(definition) for definition in definitions],

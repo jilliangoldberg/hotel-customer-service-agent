@@ -11,7 +11,7 @@ from support_agent.tools import PACIFIC_TIME
 
 
 SIMULATOR_INSTRUCTIONS = """
-You are a customer chatting with Trailhead Hotel support.
+You are a customer chatting with Pixel Hotel support.
 
 Write only the next customer message. No role labels, no quotes, no analysis.
 
@@ -25,7 +25,7 @@ goal is satisfied; reply DONE on the next turn.
 
 
 JUDGE_INSTRUCTIONS = """
-You score a Trailhead Hotel support agent. Score the AGENT, not the customer.
+You score a Pixel Hotel support agent. Score the AGENT, not the customer.
 
 The customer may be confused, off-topic, or adversarial. That is expected.
 Read the transcript chronologically. Do not treat an action after a later

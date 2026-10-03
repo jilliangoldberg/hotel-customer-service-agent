@@ -1,4 +1,4 @@
-"""A tiny local web chat for the Trailhead Hotel agent."""
+"""A tiny local web chat for the Pixel Hotel agent."""
 
 from dataclasses import dataclass, field
 from secrets import token_urlsafe

@@ -1,1 +1,1 @@
-"""On-demand adversarial eval for the Trailhead Hotel agent."""
+"""On-demand adversarial eval for the Pixel Hotel agent."""
